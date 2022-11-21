@@ -2,80 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mflow.models.basic import GraphLinear, GraphConv, ActNorm, ActNorm2D
-
-
-# class AffineCoupling(nn.Module):
-#     def __init__(self, in_channel, hidden_channels, affine=True):  # filter_size=512,  --> hidden_channels =(512, 512)
-#         super(AffineCoupling, self).__init__()
-#
-#         self.affine = affine
-#         self.layers = nn.ModuleList()
-#         self.norms = nn.ModuleList()
-#         # self.norms_in = nn.ModuleList()
-#         last_h = in_channel // 2
-#         if affine:
-#             vh = tuple(hidden_channels) + (in_channel,)
-#         else:
-#             vh = tuple(hidden_channels) + (in_channel // 2,)
-#
-#         for h in vh:
-#             self.layers.append(nn.Conv2d(last_h, h, kernel_size=3, padding=1))
-#             self.norms.append(nn.BatchNorm2d(h))  #, momentum=0.9 may change norm later, where to use norm? for the residual? or the sum
-#             # self.norms.append(ActNorm(in_channel=h, logdet=False)) # similar but not good
-#             last_h = h
-#
-#     def forward(self, input):
-#         in_a, in_b = input.chunk(2, 1)  # (2,12,32,32) --> (2,6,32,32), (2,6,32,32)
-#
-#         if self.affine:
-#             # log_s, t = self.net(in_a).chunk(2, 1)  # (2,12,32,32) --> (2,6,32,32), (2,6,32,32)
-#             s, t = self._s_t_function(in_a)
-#             out_b = (in_b + t) * s   #  different affine bias , no difference to the log-det # (2,6,32,32) More stable, less error
-#             # out_b = in_b * s + t
-#             logdet = torch.sum(torch.log(torch.abs(s)).view(input.shape[0], -1), 1)
-#
-#         else:  # add coupling
-#             # net_out = self.net(in_a)
-#             _, t = self._s_t_function(in_a)
-#             out_b = in_b + t
-#             logdet = None
-#
-#         return torch.cat([in_a, out_b], 1), logdet
-#
-#     def reverse(self, output):
-#         out_a, out_b = output.chunk(2, 1)
-#
-#         if self.affine:
-#             s, t = self._s_t_function(out_a)
-#             in_b = out_b / s - t  # More stable, less error   s must not equal to 0!!!
-#             # in_b = (out_b - t) / s
-#         else:
-#             _, t = self._s_t_function(out_a)
-#             in_b = out_b - t
-#
-#         return torch.cat([out_a, in_b], 1)
-#
-#     def _s_t_function(self, x):
-#         h = x
-#         for i in range(len(self.layers)-1):
-#             h = self.layers[i](h)
-#             h = self.norms[i](h)
-#             # h = torch.tanh(h)  # tanh may be more stable?
-#             h = torch.relu(h)  #
-#         h = self.layers[-1](h)
-#
-#         s = None
-#         if self.affine:
-#             # residual net for doubling the channel. Do not use residual, unstable
-#             log_s, t = h.chunk(2, 1)
-#             # s = torch.sigmoid(log_s + 2)  # (2,6,32,32) # s != 0 and t can be arbitrary : Why + 2??? more stable, keep s != 0!!! exp is not stable
-#             s = torch.sigmoid(log_s) # works good when actnorm
-#             # s = torch.tanh(log_s) # can not use tanh
-#             # s = torch.sign(log_s) # lower reverse error if no actnorm, similar results when have actnorm
-#
-#         else:
-#             t = h
-#         return s, t
+# from basic import GraphLinear, GraphConv, ActNorm, ActNorm2D
 
 
 class AffineCoupling(nn.Module):  # delete
@@ -150,7 +77,7 @@ class AffineCoupling(nn.Module):  # delete
             h = self.layers[i](h)
             h = self.norms[i](h)
             # h = torch.tanh(h)  # tanh may be more stable?
-            h = torch.relu(h)  #
+            h = torch.relu(h)
         h = self.layers[-1](h)
 
         s = None
@@ -330,7 +257,7 @@ def test_GraphAffineCoupling():
 if __name__ == '__main__':
     # test_AdditiveAdjCoupling()
     # test_AdditiveNodeFeatureCoupling()
-    # test_GraphAffineCoupling()
+    test_GraphAffineCoupling()
     test_AffineCoupling()
 
 
