@@ -23,18 +23,6 @@ class NumpyTupleDataset(Dataset):
 
     def __init__(self, datasets, transform=None):
         # Load dataset
-        # if not os.path.exists(filepath):
-        #     raise ValueError('Invalid filepath for dataset')
-        # load_data = np.load(filepath)
-        # datasets = []
-        # i = 0
-        # while True:
-        #     key = 'arr_{}'.format(i)
-        #     if key in load_data.keys():
-        #         datasets.append(load_data[key]) # [(133885, 9), (133885,4,9,9), (133885, 15)]
-        #         i += 1
-        #     else:
-        #         break
         if not datasets:
             raise ValueError('no datasets are given')
         length = len(datasets[0])  # 133885
@@ -45,8 +33,6 @@ class NumpyTupleDataset(Dataset):
         # Initialization
         self._datasets = datasets
         self._length = length
-        # self._features_indexer = NumpyTupleDatasetFeatureIndexer(self)
-        # self.filepath = filepath
         self.transform = transform
 
     def __len__(self):
