@@ -1,3 +1,5 @@
+## original training loop from moflow, we'll start here and build in adversarial training and rewards
+
 import json
 import os
 import sys
