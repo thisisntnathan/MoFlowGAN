@@ -9,9 +9,11 @@ import torch
 import torch.nn as nn
 
 from data.data_loader import NumpyTupleDataset
+
 from mflow.models.hyperparams import Hyperparameters
 from mflow.models.model import MoFlow, rescale_adj
 from mflow.models.utils import check_validity, save_mol_png
+from mGAN.models import Discriminator
 
 import time
 from mflow.utils.timereport import TimeReport
@@ -20,7 +22,7 @@ from mflow.generate import generate_mols
 import functools
 print = functools.partial(print, flush=True)
 
-
+ 
 def get_parser():
     parser = argparse.ArgumentParser()
     # data I/O
@@ -34,10 +36,14 @@ def get_parser():
     parser.add_argument('-r', '--load_params', type=int, default=0,
                         help='Restore training from previous model checkpoint? 1 = Yes, 0 = No')
     parser.add_argument('--load_snapshot', type=str, default='', help='load the model from this path')
+
     # optimization
+    parser.add_argument('-c', '--regularizer', type=float, default=1.0, help='GAN loss tradeoff multiplier')
     parser.add_argument('-l', '--learning_rate', type=float, default=0.001, help='Base learning rate')
     parser.add_argument('-e', '--lr_decay', type=float, default=0.999995,
                         help='Learning rate decay, applied every step of the optimization')
+    parser.add_argument('-b1', '--beta1', type=float, default=0.9, help='Beta1 for Adam optimizer')
+    parser.add_argument('-b2', '--beta2', type=float, default=0.999, help='Beta2 for Adam optimizer')
     parser.add_argument('-x', '--max_epochs', type=int, default=5000, help='How many epochs to run in total?')
     parser.add_argument('-g', '--gpu', type=int, default=0, help='GPU Id to use')
     parser.add_argument('--save_epochs', type=int, default=1, help='in how many epochs, a snapshot of the model'
@@ -51,6 +57,7 @@ def get_parser():
     # parser.add_argument('--sample_batch_size', type=int, default=16,
     #                     help='How many samples to process in paralell during sampling?')
     # reproducibility
+
     # For bonds
     parser.add_argument('--b_n_flow', type=int, default=10,
                         help='Number of masked glow coupling layers per block for bond tensor')
@@ -87,16 +94,15 @@ def train():
     parser = get_parser()
     args = parser.parse_args()
 
-    # Device configuration
+    # use GPUs if available
     device = -1
     multigpu = False
-    if args.gpu >= 0:
-        # signle gpu
-        # device = args.gpu
-        device = torch.device('cuda:'+str(args.gpu) if torch.cuda.is_available() else 'cpu')
-    elif args.gpu == -1:
+    if args.gpu == -1:
         # cpu
         device = torch.device('cpu')
+    elif args.gpu >= 0:
+        # single gpu
+        device = torch.device('cuda:'+str(args.gpu) if torch.cuda.is_available() else 'cpu')
     else:
         # multigpu, can be slower than using just 1 gpu
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -138,6 +144,7 @@ def train():
         raise ValueError('Only support qm9 and zinc250k right now. '
                          'Parameters need change a little bit for other dataset.')
 
+    # TODO: add params for discriminator
     model_params = Hyperparameters(b_n_type=b_n_type,  # 4,
                                    b_n_flow=args.b_n_flow,
                                    b_n_block=args.b_n_block,
@@ -200,7 +207,7 @@ def train():
 
 
     # Loss and optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, betas=(args.beta1, args.beta2))
 
     # Train the models
     iter_per_epoch = len(train_dataloader)
