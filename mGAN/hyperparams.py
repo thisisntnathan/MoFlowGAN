@@ -46,7 +46,7 @@ class Hyperparameters:
         self.f_dim= f_dim  # 0
 
         self.dropout_rate= dropout_rate  # 0
-        self. activation= activation  # tanh
+        self.activation= activation  # tanh
 
         self.path = path  # None
         self.seed = seed  # 420
