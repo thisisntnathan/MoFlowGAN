@@ -22,8 +22,12 @@ class ResidualBlock(nn.Module):
 
 
 class Discriminator(nn.Module):
-    """Discriminator from 
-    https://github.com/ZhenyueQin/Implementation-MolGAN-PyTorch/blob/master/models_gan.py"""
+    """
+    Discriminator adapted from 
+    https://github.com/ZhenyueQin/Implementation-MolGAN-PyTorch/blob/master/models_gan.py
+    
+    Now implemted to work with the Hyperparameter class from moflow
+    """
     def __init__(self, hyper_params: Hyperparameters):
         super(Discriminator, self).__init__()
         self.hyper_params = hyper_params  # hold all the parameters, easy for save and load for further usage
