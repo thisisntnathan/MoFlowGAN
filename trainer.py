@@ -333,10 +333,10 @@ def train():
             gen.zero_gradients()
             disc.zero_gradients()
 
-            ## real batch 
+            # real batch 
             logits_real, _ = disc(x_onehot, None, adj_normalized_onehot)
 
-            ## fake batch
+            # fake batch
             # reverse pass through generator
             edges, nodes = gen.reverse(make_noise(x.size[0], a_n_node, a_n_type, b_n_type, device))
             # gumbel softmax
@@ -381,15 +381,21 @@ def train():
                 nll_loss = nll[0] + nll[1]
 
                 ## adversarial training step
-                # reverse pass through generator
+                # generate a fake batch
                 edges, nodes = gen.reverse(make_noise(x.size[0], a_n_node, a_n_type, b_n_type, device))
-                gen_loss, _ = disc(edges, None, nodes)  # calculate GAN loss
+                # gumbel softmax
+                e_hat, n_hat = postprocess((edges, nodes), 'medium_gumbel')
+                # get fake batch logits
+                logits_fake, _ = disc(e_hat, None, n_hat)  # calculate GAN loss
+
+                gen_loss = -logits_fake
 
                 loss= nll_loss + c * gen_loss  # calculate total loss
                 loss.backwards()  # backwards pass
 
                 optimizer_gen.step()  # update generator
             
+
             tr.update()
 
             # Print log info
