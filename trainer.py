@@ -17,7 +17,6 @@ from mflow.models.utils import check_validity, save_mol_png
 from mGAN.hyperparams import Hyperparameters as DiscHyperPars
 from mGAN.models import Discriminator
 
-
 import time
 from mflow.utils.timereport import TimeReport
 from mflow.generate import generate_mols
@@ -118,6 +117,7 @@ def gradient_penalty(y, x, device):
     dydx_l2norm = torch.sqrt(torch.sum(dydx ** 2, dim=1))
     return torch.mean((dydx_l2norm - 1) ** 2)
 
+
 def make_noise(batch_size, a_n_node, a_n_type, b_n_type, device):
     '''
     Generate a random noise tensor
@@ -126,6 +126,7 @@ def make_noise(batch_size, a_n_node, a_n_type, b_n_type, device):
     Out: z: latent vector. Shape: [B, N*N*M + N*T] 
     '''
     return torch.randn(batch_size, a_n_node * a_n_node * b_n_type + a_n_node * a_n_type, device=device, requires_grad=True)
+
 
 def postprocess(inputs, method, temperature=1.):
     def listify(x):
@@ -147,6 +148,7 @@ def postprocess(inputs, method, temperature=1.):
                     for e_logits in listify(inputs)]
 
     return [delistify(e) for e in (softmax)]
+
 
 def train():
     start = time.time()
@@ -304,6 +306,11 @@ def train():
     optimizer_disc = torch.optim.Adam(gen.parameters(), lr=args.learning_rate, betas=(args.beta1, args.beta2))
     c= args.regularizer
 
+
+    # keep track of training
+    disc_losses = []
+    gen_losses = [0]
+
     # Train the models
     iter_per_epoch = len(train_dataloader)
     gen_iter = 0
@@ -358,6 +365,8 @@ def train():
             disc_loss.backwards()  # backwards pass
 
             optimizer_disc.step()  # update discriminator
+            disc_losses.append(disc_loss.item())
+            gen_losses.append(gen_losses[-1])
 
 
             # ==============================================================
@@ -388,23 +397,24 @@ def train():
                 # get fake batch logits
                 logits_fake, _ = disc(e_hat, None, n_hat)  # calculate GAN loss
 
-                gen_loss = -logits_fake
+                gan_loss = -logits_fake
 
-                loss= nll_loss + c * gen_loss  # calculate total loss
-                loss.backwards()  # backwards pass
+                gen_loss= nll_loss + c * gan_loss  # calculate total loss
+                gen_loss.backwards(retain_graph=True)  # backwards pass
 
                 optimizer_gen.step()  # update generator
+                disc_losses.append(disc_losses[-1])
+                gen_losses.append(gen_loss.item())
             
 
             tr.update()
 
             # Print log info
             if (i+1) % log_step == 0:  # i % args.log_step == 0:
-                print('Epoch [{}/{}], Iter [{}/{}], loglik: {:.5f}, nll_x: {:.5f},'
-                      ' nll_adj: {:.5f}, {:.2f} sec/iter, {:.2f} iters/sec: '.
-                      format(epoch+1, args.max_epochs, i+1, iter_per_epoch,
-                             loss.item(), nll[0].item(), nll[1].item(),
-                             tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
+                print('Epoch [{}/{}], Iter [{}/{}], gen_loss: {:.5f}, disc_loss: {:.5f}'
+                      ', {:.2f} sec/iter, {:.2f} iters/sec: '.
+                      format(epoch+1, args.max_epochs, i+1, iter_per_epoch, gen_loss.item(),
+                             disc_losses[-1], tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
                 tr.print_summary()
 
         if debug:
