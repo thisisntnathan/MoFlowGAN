@@ -7,6 +7,7 @@ import argparse
 from distutils.util import strtobool
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from data.data_loader import NumpyTupleDataset
 
@@ -15,6 +16,7 @@ from mflow.models.model import MoFlow, rescale_adj
 from mflow.models.utils import check_validity, save_mol_png
 from mGAN.hyperparams import Hyperparameters as DiscHyperPars
 from mGAN.models import Discriminator
+
 
 import time
 from mflow.utils.timereport import TimeReport
@@ -101,6 +103,50 @@ def get_parser():
 
     return parser
 
+
+def gradient_penalty(y, x, device):
+    '''Compute gradient penalty: (L2_norm(dy/dx) - 1)**2.'''
+    weight = torch.ones(y.size()).to(device)
+    dydx = torch.autograd.grad(outputs=y,
+                                inputs=x,
+                                grad_outputs=weight,
+                                retain_graph=True,
+                                create_graph=True,
+                                only_inputs=True)[0]
+
+    dydx = dydx.view(dydx.size(0), -1)
+    dydx_l2norm = torch.sqrt(torch.sum(dydx ** 2, dim=1))
+    return torch.mean((dydx_l2norm - 1) ** 2)
+
+def make_noise(batch_size, a_n_node, a_n_type, b_n_type, device):
+    '''
+    Generate a random noise tensor
+    In: B = Batch size, N = number of atoms (a_n_node), M = number of bond types (b_n_types), 
+        T = number of atom types (Carbon, Oxygen etc.) (a_n_type)
+    Out: z: latent vector. Shape: [B, N*N*M + N*T] 
+    '''
+    return torch.randn(batch_size, a_n_node * a_n_node * b_n_type + a_n_node * a_n_type, device=device requires_grad=True)
+
+def postprocess(inputs, method, temperature=1.):
+    def listify(x):
+        return x if type(x) == list or type(x) == tuple else [x]
+
+    def delistify(x):
+        return x if len(x) > 1 else x[0]
+
+    if method == 'soft_gumbel':
+        softmax = [F.gumbel_softmax(e_logits.contiguous().view(-1, e_logits.size(-1))
+                                    / temperature, hard=False).view(e_logits.size())
+                    for e_logits in listify(inputs)]
+    elif method == 'hard_gumbel':
+        softmax = [F.gumbel_softmax(e_logits.contiguous().view(-1, e_logits.size(-1))
+                                    / temperature, hard=True).view(e_logits.size())
+                    for e_logits in listify(inputs)]
+    else:
+        softmax = [F.softmax(e_logits / temperature, -1)
+                    for e_logits in listify(inputs)]
+
+    return [delistify(e) for e in (softmax)]
 
 def train():
     start = time.time()
@@ -199,6 +245,7 @@ def train():
                                       conv_dim= args.disc_conv_dim,  # [[128, 64], 128, [128, 64]]
                                       with_features= args.disc_with_features,  # False
                                       f_dim= args.disc_f_dim,  # 0
+                                      lam= args.lam,  # 10
                                       dropout_rate= args.disc_dropout_rate,  # 0.
                                       activation= args.disc_activation,  # tanh
                                       seed= args.seed
@@ -215,6 +262,13 @@ def train():
     else:
         multigpu = False
     disc = disc.to(device)
+
+    # auxiliary disciminator patch function
+    def label_2_onehot(labels, dim):
+        '''Convert label indices to one-hot vectors.'''
+        out = torch.zeros(list(labels.size()) + [dim]).to(device)
+        out.scatter_(len(out.size()) - 1, labels.unsqueeze(-1), 1.)
+        return out
 
     # Datasets:
     dataset = NumpyTupleDataset.load(os.path.join(args.data_dir, data_file), transform=transform_fn)  # 133885
@@ -252,26 +306,58 @@ def train():
 
     # Train the models
     iter_per_epoch = len(train_dataloader)
+    gen_iter = 0
     log_step = args.save_interval  # 20 default
     tr = TimeReport(total_iter=args.max_epochs * iter_per_epoch)
     for epoch in range(args.max_epochs):
         print("In epoch {}, Time: {}".format(epoch+1, time.ctime()))
         for i, batch in enumerate(train_dataloader):
-            # turn off shuffle to see the order with original code
             x = batch[0].to(device)  # (256, 9, 5)
             adj = batch[1].to(device)  # (256,4, 9, 9)
             adj_normalized = rescale_adj(adj).to(device)
+            x_onehot = label_2_onehot(x, a_n_type)
+            adj_normalized_onehot = label_2_onehot(adj, b_n_type)
+
+            # two time-scale training
+            if gen_iter < 25 or gen_iter % 500 == 0:
+                train_gen = True if i % 100 == 0 else False
+            else:
+                train_gen = True if i % 5 == 0 else False
 
             # ==============================================================
             #         Discriminator training step
+            # The generator is trained using the Wasserstein-GAN + gradient penalty
+            # objective described by Gulrajani et al. (https://arxiv.org/abs/1704.00028)
             # ==============================================================
+            # zero gradients
+            gen.zero_gradients()
+            disc.zero_gradients()
 
+            ## real batch 
+            logits_real, feats_real = disc(x_onehot, None, adj_normalized_onehot)
 
-            ## real batch training
+            ## fake batch
+            # reverse pass through generator
+            edges, nodes = gen.reverse(make_noise(x.size[0], a_n_node, a_n_type, b_n_type, device))
+            # gumbel softmax
+            e_hat, n_hat = postprocess((edges, nodes), 'medium_gumbel')
+            # get fake batch logits
+            logits_fake, feats_fake = disc(e_hat, None, n_hat)
 
+            # compute losses and gradient penalty
+            eps = torch.rand(logits_real.size(0), 1, 1, 1).to(device)
+            x_int0 = (eps * adj_normalized_onehot + (1. - eps) * e_hat).requires_grad_(True)
+            x_int1 = (eps.squeeze(-1) * x_onehot + (1. - eps.squeeze(-1)) * n_hat).requires_grad_(True)
+            grad0, grad1 = disc(x_int0, None, x_int1)
+            grad_penalty = gradient_penalty(grad0, x_int0) + gradient_penalty(grad1, x_int1)
 
-            ## fake batch training
+            disc_loss_real = torch.mean(logits_real)
+            disc_loss_fake = torch.mean(logits_fake)
+            disc_loss = -disc_loss_real + disc_loss_fake + disc.lam * grad_penalty
 
+            # backwards pass
+            disc_loss.backwards()
+            optimizer_disc.step()
 
 
             # ==============================================================
@@ -280,32 +366,30 @@ def train():
             # by Ermon et al. (https://arxiv.org/abs/1705.08868)
             # In short: L(x) = nll(x) + C * L_adv(x)
             # ==============================================================
-            gen.zero_gradients()
-            disc.zero_gradients()
+            if train_gen:
+                gen.zero_gradients()
+                disc.zero_gradients()
 
-            ## likelihood training step
-            # forward pass through flow generator
-            z, sum_log_det_jacs = gen(adj, x, adj_normalized)
-            # calculate nll loss
-            if multigpu:
-                nll = gen.module.log_prob(z, sum_log_det_jacs)
-            else:
-                nll = gen.log_prob(z, sum_log_det_jacs)
-            nllLoss = nll[0] + nll[1]
+                ## likelihood training step
+                # forward pass through flow generator
+                z, sum_log_det_jacs = gen(adj, x, adj_normalized)
+                # calculate nll loss
+                if multigpu:
+                    nll = gen.module.log_prob(z, sum_log_det_jacs)
+                else:
+                    nll = gen.log_prob(z, sum_log_det_jacs)
+                nll_loss = nll[0] + nll[1]
 
-            ## adversarial training step
-            # N.b. z: latent vector. Shape: [B, N*N*M + N*T] 
-            # B = Batch size, N = number of atoms (a_n_node), M = number of bond types (b_n_types), T = number of atom types (Carbon, Oxygen etc.) (a_n_type)
-            # reverse pass through generator
-            noise= torch.randn(x.size[0], a_n_node * a_n_node * b_n_type + a_n_node * a_n_type, 
-                                  device=device, requires_grad=True)
-            edges, nodes = gen.reverse(noise)
-            discLoss, _ = disc(edges, None, nodes)  # calculate GAN loss
+                ## adversarial training step
+                # reverse pass through generator
+                edges, nodes = gen.reverse(make_noise(x.size[0], a_n_node, a_n_type, b_n_type, device))
+                gen_loss, _ = disc(edges, None, nodes)  # calculate GAN loss
 
-            loss= nllLoss + c * discLoss  # calculate total loss
-            loss.backwards()  # backwards pass
+                loss= nll_loss + c * gen_loss  # calculate total loss
+                loss.backwards()  # backwards pass
 
-            optimizer_gen.step()  # update generator
+                optimizer_gen.step()  # update generator
+            
             tr.update()
 
             # Print log info
