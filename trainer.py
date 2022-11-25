@@ -144,8 +144,8 @@ def train():
         raise ValueError('Only support qm9 and zinc250k right now. '
                          'Parameters need change a little bit for other dataset.')
 
-    # TODO: add params for discriminator
-    model_params = Hyperparameters(b_n_type=b_n_type,  # 4,
+    ## Make generator model
+    model_params_gflow = Hyperparameters(b_n_type=b_n_type,  # 4,
                                    b_n_flow=args.b_n_flow,
                                    b_n_block=args.b_n_block,
                                    b_n_squeeze=b_n_squeeze,
@@ -165,18 +165,24 @@ def train():
                                    seed=args.seed,
                                    noise_scale=args.noise_scale
                                    )
-    print('Model params:')
-    model_params.print()
-    model = MoFlow(model_params)
+    print('Generator params:')
+    model_params_gflow.print()
+    gen = MoFlow(model_params_gflow)
     os.makedirs(args.save_dir, exist_ok=True)
-    model.save_hyperparams(os.path.join(args.save_dir, 'moflow-params.json'))
+    gen.save_hyperparams(os.path.join(args.save_dir, 'gen-params.json'))
     if torch.cuda.device_count() > 1 and multigpu:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
         # dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
-        model = nn.DataParallel(model)
+        gen = nn.DataParallel(gen)
     else:
         multigpu = False
-    model = model.to(device)
+    gen = gen.to(device)
+
+    ## TODO: make discriminator model
+    model_params_dis = Hyperparameters(
+                                
+    )
+
 
     # Datasets:
     dataset = NumpyTupleDataset.load(os.path.join(args.data_dir, data_file), transform=transform_fn)  # 133885
@@ -207,7 +213,7 @@ def train():
 
 
     # Loss and optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, betas=(args.beta1, args.beta2))
+    optimizer_gen = torch.optim.Adam(gen.parameters(), lr=args.learning_rate, betas=(args.beta1, args.beta2))
 
     # Train the models
     iter_per_epoch = len(train_dataloader)
@@ -216,21 +222,32 @@ def train():
     for epoch in range(args.max_epochs):
         print("In epoch {}, Time: {}".format(epoch+1, time.ctime()))
         for i, batch in enumerate(train_dataloader):
-            optimizer.zero_grad()
+            optimizer_gen.zero_grad()
             # turn off shuffle to see the order with original code
             x = batch[0].to(device)  # (256,9,5)
             adj = batch[1].to(device)  # (256,4,9, 9)
             adj_normalized = rescale_adj(adj).to(device)
 
-            # Forward, backward and optimize
-            z, sum_log_det_jacs = model(adj, x, adj_normalized)
+            # ========================================================
+            #         Generator training step
+            # ========================================================
+
+
+            # ========================================================
+            #         Generator training step
+            # ========================================================
+            ## Likelihood training step
+            # forward pass through flow generator
+            z, sum_log_det_jacs = gen(adj, x, adj_normalized)
+            # calculate loss
             if multigpu:
-                nll = model.module.log_prob(z, sum_log_det_jacs)
+                nll = gen.module.log_prob(z, sum_log_det_jacs)
             else:
-                nll = model.log_prob(z, sum_log_det_jacs)
+                nll = gen.log_prob(z, sum_log_det_jacs)
+
             loss = nll[0] + nll[1]
             loss.backward()
-            optimizer.step()
+            optimizer_gen.step()
             tr.update()
 
             # Print log info
@@ -244,17 +261,17 @@ def train():
 
         if debug:
             def print_validity(ith):
-                model.eval()
+                gen.eval()
                 if multigpu:
-                    adj, x = generate_mols(model.module, batch_size=100, device=device)
+                    adj, x = generate_mols(gen.module, batch_size=100, device=device)
                 else:
-                    adj, x = generate_mols(model, batch_size=100, device=device)
+                    adj, x = generate_mols(gen, batch_size=100, device=device)
                 valid_mols = check_validity(adj, x, atomic_num_list)['valid_mols']
                 mol_dir = os.path.join(args.save_dir, 'generated_{}'.format(ith))
                 os.makedirs(mol_dir, exist_ok=True)
                 for ind, mol in enumerate(valid_mols):
                     save_mol_png(mol, os.path.join(mol_dir, '{}.png'.format(ind)))
-                model.train()
+                gen.train()
             print_validity(epoch+1)
 
         # The same report for each epoch
@@ -271,10 +288,10 @@ def train():
             save_epochs = args.max_epochs
         if (epoch + 1) % save_epochs == 0:
             if multigpu:
-                torch.save(model.module.state_dict(), os.path.join(
+                torch.save(gen.module.state_dict(), os.path.join(
                 args.save_dir, 'model_snapshot_epoch_{}'.format(epoch + 1)))
             else:
-                torch.save(model.state_dict(), os.path.join(
+                torch.save(gen.state_dict(), os.path.join(
                 args.save_dir, 'model_snapshot_epoch_{}'.format(epoch + 1)))
             tr.end()
 
