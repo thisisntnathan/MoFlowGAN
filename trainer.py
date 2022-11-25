@@ -125,7 +125,7 @@ def make_noise(batch_size, a_n_node, a_n_type, b_n_type, device):
         T = number of atom types (Carbon, Oxygen etc.) (a_n_type)
     Out: z: latent vector. Shape: [B, N*N*M + N*T] 
     '''
-    return torch.randn(batch_size, a_n_node * a_n_node * b_n_type + a_n_node * a_n_type, device=device requires_grad=True)
+    return torch.randn(batch_size, a_n_node * a_n_node * b_n_type + a_n_node * a_n_type, device=device, requires_grad=True)
 
 def postprocess(inputs, method, temperature=1.):
     def listify(x):
@@ -334,7 +334,7 @@ def train():
             disc.zero_gradients()
 
             ## real batch 
-            logits_real, feats_real = disc(x_onehot, None, adj_normalized_onehot)
+            logits_real, _ = disc(x_onehot, None, adj_normalized_onehot)
 
             ## fake batch
             # reverse pass through generator
@@ -342,22 +342,22 @@ def train():
             # gumbel softmax
             e_hat, n_hat = postprocess((edges, nodes), 'medium_gumbel')
             # get fake batch logits
-            logits_fake, feats_fake = disc(e_hat, None, n_hat)
+            logits_fake, _ = disc(e_hat, None, n_hat)
 
-            # compute losses and gradient penalty
+            # compute gradient penalty
             eps = torch.rand(logits_real.size(0), 1, 1, 1).to(device)
             x_int0 = (eps * adj_normalized_onehot + (1. - eps) * e_hat).requires_grad_(True)
             x_int1 = (eps.squeeze(-1) * x_onehot + (1. - eps.squeeze(-1)) * n_hat).requires_grad_(True)
             grad0, grad1 = disc(x_int0, None, x_int1)
             grad_penalty = gradient_penalty(grad0, x_int0) + gradient_penalty(grad1, x_int1)
 
+            # compute losses
             disc_loss_real = torch.mean(logits_real)
             disc_loss_fake = torch.mean(logits_fake)
             disc_loss = -disc_loss_real + disc_loss_fake + disc.lam * grad_penalty
+            disc_loss.backwards()  # backwards pass
 
-            # backwards pass
-            disc_loss.backwards()
-            optimizer_disc.step()
+            optimizer_disc.step()  # update discriminator
 
 
             # ==============================================================
