@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mflow.models.basic import GraphLinear, GraphConv, ActNorm, ActNorm2D
-# from basic import GraphLinear, GraphConv, ActNorm, ActNorm2D
 
 
 class AffineCoupling(nn.Module):  # delete
