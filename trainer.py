@@ -375,7 +375,7 @@ def train():
             # by Ermon et al. (https://arxiv.org/abs/1705.08868)
             # In short: L(x) = nll(x) + C * L_adv(x)
             # ==============================================================
-            if train_gen:
+            if train_gen or i == len(train_dataloader) - 1:
                 gen.zero_gradients()
                 disc.zero_gradients()
 
@@ -433,11 +433,12 @@ def train():
             print_validity(epoch+1)
 
         # The same report for each epoch
-        print('Epoch [{}/{}], Iter [{}/{}], loglik: {:.5f}, nll_x: {:.5f},'
-              ' nll_adj: {:.5f}, {:.2f} sec/iter, {:.2f} iters/sec: '.
-              format(epoch + 1, args.max_epochs, -1, iter_per_epoch,
-                     loss.item(), nll[0].item(), nll[1].item(),
-                     tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
+            print('Epoch [{}/{}], Iter [{}/{}], gen_loss: {:.5f}, nll_x: {:.5f},'
+                    'nll_adj: {:.5f}, C: {:.5f}, gan_loss: {:.5f}, disc_loss: {:.5f},'
+                    '{:.2f} sec/iter, {:.2f} iters/sec: '.
+                    format(epoch+1, args.max_epochs, i+1, iter_per_epoch, gen_loss.item(),
+                            nll[0].item(), nll[1].item(), disc.lam, gan_loss.item(),
+                            disc_losses[-1], tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
         tr.print_summary()
 
         # Save the model checkpoints
