@@ -1,3 +1,5 @@
+## DO NOT USE - Depreciated
+## use ./trainer.py instead
 ## original training loop from moflow, we'll start here and build in adversarial training and rewards
 
 import json
