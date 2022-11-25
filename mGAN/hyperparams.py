@@ -17,7 +17,7 @@ class Hyperparameters:
                  # feature aggregation
                  with_features=False, f_dim=0,
                  # General
-                 dropout_rate=0., activation=nn.Tanh(), path=None, seed=420):
+                 lam= 10, dropout_rate=0., activation=nn.Tanh(), path=None, seed=420):
         """
         :param b_n_type: Number of bond types/channels (b_dim)
         :param a_n_node: Maximum number of atoms in a molecule 
@@ -44,6 +44,8 @@ class Hyperparameters:
 
         self.with_features= with_features  # False
         self.f_dim= f_dim  # 0
+
+        self.lam= lam  # 10
 
         self.dropout_rate= dropout_rate  # 0
         self.activation= activation  # tanh

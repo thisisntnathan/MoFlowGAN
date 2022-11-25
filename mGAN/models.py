@@ -47,6 +47,8 @@ class Discriminator(nn.Module):
         self.with_features= hyper_params.with_features  # False
         self.f_dim= hyper_params.f_dim  # 0
 
+        self.lam= hyper_params.lam  # 10
+
         self.activation_f = hyper_params.activation
 
         # discriminator
