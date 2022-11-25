@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from mGAN.layers import GraphConvolution, GraphAggregation, MultiGraphConvolutionLayers, MultiDenseLayer
+from mGAN.hyperparams import Hyperparameters
 
 
 class ResidualBlock(nn.Module):
@@ -23,17 +24,33 @@ class ResidualBlock(nn.Module):
 class Discriminator(nn.Module):
     """Discriminator from 
     https://github.com/ZhenyueQin/Implementation-MolGAN-PyTorch/blob/master/models_gan.py"""
-    def __init__(self, conv_dim, m_dim, b_dim, with_features=False, f_dim=0, dropout_rate=0.):
+    def __init__(self, hyper_params: Hyperparameters):
         super(Discriminator, self).__init__()
-        self.activation_f = nn.Tanh()
-        graph_conv_dim, aux_dim, linear_dim = conv_dim
+        self.hyper_params = hyper_params  # hold all the parameters, easy for save and load for further usage
+
+        # More parameters derived from hyper_params for easy use
+        self.b_n_type = hyper_params.b_n_type  # 4
+        self.a_n_node = hyper_params.a_n_node  # 9
+        self.a_n_type = hyper_params.a_n_type  # 5
+
+        self.conv_dim = hyper_params.conv_dim  # [[128, 64], 128, [128, 64]]
+
+        # unpack
+        self.graph_conv_dim = self.conv_dim[0]  # [128, 64]
+        self.aux_dim = self.conv_dim[1]  # 128
+        self.linear_dim = self.conv_dim[2]  # [128, 64]
+
+        self.with_features= hyper_params.with_features  # False
+        self.f_dim= hyper_params.f_dim  # 0
+
+        self.activation_f = hyper_params.activation
 
         # discriminator
-        self.gcn_layer = GraphConvolution(m_dim, graph_conv_dim, b_dim, with_features, f_dim, dropout_rate)
-        self.agg_layer = GraphAggregation(graph_conv_dim[-1] + m_dim, aux_dim, self.activation_f, with_features, f_dim, dropout_rate)
-        self.multi_dense_layer = MultiDenseLayer(aux_dim, linear_dim, self.activation_f, dropout_rate=dropout_rate)
+        self.gcn_layer = GraphConvolution(self.a_n_type, self.graph_conv_dim, self.b_n_type, self.with_features, self.f_dim, self.dropout_rate)
+        self.agg_layer = GraphAggregation(self.graph_conv_dim[-1] + self.a_n_type, self.aux_dim, self.activation_f, self.with_features, self.f_dim, self.dropout_rate)
+        self.multi_dense_layer = MultiDenseLayer(self.aux_dim, self.linear_dim, self.activation_f, dropout_rate=self.dropout_rate)
 
-        self.output_layer = nn.Linear(linear_dim[-1], 1)
+        self.output_layer = nn.Linear(self.linear_dim[-1], 1)
 
     def forward(self, adj, hidden, node, activation=None):
         adj = adj[:, :, :, 1:].permute(0, 3, 1, 2)
@@ -49,16 +66,16 @@ class Discriminator(nn.Module):
 
 # class Discriminator2(nn.Module):
 #     """Discriminator network with PatchGAN."""
-#     def __init__(self, conv_dim, m_dim, b_dim, dropout, batch=True):
+#     def __init__(self, conv_dim, self.a_n_type, self.b_n_type, self.dropout, batch=self.True):
 #         super(Discriminator, self).__init__()
 #         self.batch= batch
 #         self.graph_conv_dim, self.aux_dim, self.linear_dim = conv_dim
 
 #         # discriminator
-#         self.gcn_layer = GraphConvolution(m_dim, self.graph_conv_dim, b_dim, dropout)
-#         self.agg_layer = GraphAggregation(self.graph_conv_dim[-1], self.aux_dim, b_dim, dropout)
+#         self.gcn_layer = GraphConvolution(self.a_n_type, self.graph_conv_dim, self.b_n_type, self.dropout)
+#     self.    self.agg_layer = GraphAggregation(self.graph_conv_dim[-1], self.aux_dim, self.b_n_type, self.dropout)
 
-#         # multi dense layer
+#    self.     # multi dense layer
 #         layers = []
 #         for c0, c1 in zip([self.aux_dim]+self.linear_dim[:-1], self.linear_dim):
 #             layers.append(nn.Linear(c0,c1))
