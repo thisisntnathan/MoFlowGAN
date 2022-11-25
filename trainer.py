@@ -50,7 +50,7 @@ def get_parser():
     parser.add_argument('--save_epochs', type=int, default=1, help='in how many epochs, a snapshot of the model'
                                                                    ' needs to be saved?')
     # data loader
-    parser.add_argument('-b', '--batch_size', type=int, default=12, help='Batch size during training per GPU')
+    parser.add_argument('-b', '--batch_size', type=int, default=256, help='Batch size during training per GPU')
     parser.add_argument('--shuffle', type=strtobool, default='false', help='Shuffle the data batch')
     parser.add_argument('--num_workers', type=int, default=0, help='Number of workers in the data loader')
 
@@ -241,11 +241,14 @@ def train():
     print('Num Minibatch-size: {}'.format(args.batch_size))
     print('Num Iter/Epoch: {}'.format(len(train_dataloader)))
     print('Num epoch: {}'.format(args.max_epochs))
+    print('Regularization coefficient: {}'.format(args.regularizer))
     print('==========================================')
 
 
-    # Optimizers
+    # Loss and optimizers
     optimizer_gen = torch.optim.Adam(gen.parameters(), lr=args.learning_rate, betas=(args.beta1, args.beta2))
+    optimizer_disc = torch.optim.Adam(gen.parameters(), lr=args.learning_rate, betas=(args.beta1, args.beta2))
+    c= args.regularizer
 
     # Train the models
     iter_per_epoch = len(train_dataloader)
@@ -254,7 +257,6 @@ def train():
     for epoch in range(args.max_epochs):
         print("In epoch {}, Time: {}".format(epoch+1, time.ctime()))
         for i, batch in enumerate(train_dataloader):
-            optimizer_gen.zero_grad()
             # turn off shuffle to see the order with original code
             x = batch[0].to(device)  # (256, 9, 5)
             adj = batch[1].to(device)  # (256,4, 9, 9)
@@ -267,6 +269,7 @@ def train():
 
             ## real batch training
 
+
             ## fake batch training
 
 
@@ -277,7 +280,10 @@ def train():
             # by Ermon et al. (https://arxiv.org/abs/1705.08868)
             # In short: L(x) = nll(x) + C * L_adv(x)
             # ==============================================================
-            ## Likelihood training step
+            gen.zero_gradients()
+            disc.zero_gradients()
+
+            ## likelihood training step
             # forward pass through flow generator
             z, sum_log_det_jacs = gen(adj, x, adj_normalized)
             # calculate nll loss
@@ -285,10 +291,21 @@ def train():
                 nll = gen.module.log_prob(z, sum_log_det_jacs)
             else:
                 nll = gen.log_prob(z, sum_log_det_jacs)
+            nllLoss = nll[0] + nll[1]
 
-            loss = nll[0] + nll[1]
-            loss.backward()
-            optimizer_gen.step()
+            ## adversarial training step
+            # N.b. z: latent vector. Shape: [B, N*N*M + N*T] 
+            # B = Batch size, N = number of atoms (a_n_node), M = number of bond types (b_n_types), T = number of atom types (Carbon, Oxygen etc.) (a_n_type)
+            # reverse pass through generator
+            noise= torch.randn(x.size[0], a_n_node * a_n_node * b_n_type + a_n_node * a_n_type, 
+                                  device=device, requires_grad=True)
+            edges, nodes = gen.reverse(noise)
+            discLoss, _ = disc(edges, None, nodes)  # calculate GAN loss
+
+            loss= nllLoss + c * discLoss  # calculate total loss
+            loss.backwards()  # backwards pass
+
+            optimizer_gen.step()  # update generator
             tr.update()
 
             # Print log info
