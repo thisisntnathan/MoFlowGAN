@@ -23,6 +23,10 @@ class Hyperparameters:
         :param a_n_node: Maximum number of atoms in a molecule 
         :param a_n_type: Number of atom types (m_dim)
         :param conv_dim: convolution dimensions (graph_conv_dim, aux_dim, linear_dim)
+        :param with_features: whether or not to aggregate features
+        :param f_dim: feature dimensions
+        :param dropout_rate: rate to perform dropout
+        :param activation: activation function
         :param path:
         :param noise_scale:
         """
