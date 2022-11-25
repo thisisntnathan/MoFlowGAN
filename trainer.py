@@ -10,9 +10,10 @@ import torch.nn as nn
 
 from data.data_loader import NumpyTupleDataset
 
-from mflow.models.hyperparams import Hyperparameters
+from mflow.models.hyperparams import Hyperparameters as FlowHyperPars
 from mflow.models.model import MoFlow, rescale_adj
 from mflow.models.utils import check_validity, save_mol_png
+from mGAN.hyperparams import Hyperparameters as DiscHyperPars
 from mGAN.models import Discriminator
 
 import time
@@ -79,8 +80,21 @@ def get_parser():
                         help='Mask row size list for atom matrix, delimited list input ')
     parser.add_argument('--mask_row_stride_list', type=str, default="1,",
                         help='Mask row stride list for atom matrix, delimited list input')
+
+    # Discriminator network
+    parser.add_argument('--disc_conv_dim', type=list, default=[[128, 64],128, [128, 64]],
+                        help='Discriminator convolution dimensions (graph_conv_dim, aux_dim, linear_dim)')
+    parser.add_argument('--disc_with_features', type=bool, default=False,
+                         help='')
+    parser.add_argument('--disc_f_dim', type=int, default=0,
+                         help='')
+    parser.add_argument('--disc_dropout_rate',  type=float, default=0.0,
+                         help='')
+    parser.add_argument('--disc_acitivation', type=function, default=nn.tanh(),
+                         help='')
+
     # General
-    parser.add_argument('-s', '--seed', type=int, default=1, help='Random seed to use')
+    parser.add_argument('-s', '--seed', type=int, default=420, help='Random seed to use')
     parser.add_argument('--debug', type=strtobool, default='true', help='To run training with more information')
     parser.add_argument('--learn_dist', type=strtobool, default='true', help='learn the distribution of feature matrix')
     parser.add_argument('--noise_scale', type=float, default=0.6, help='x + torch.rand(x.shape) * noise_scale')
@@ -112,7 +126,7 @@ def train():
 
     print('input args:\n', json.dumps(vars(args), indent=4, separators=(',', ':')))  # pretty print args
 
-    # Model configuration
+    # Flow model configuration
     b_hidden_ch = [int(d) for d in args.b_hidden_ch.strip(',').split(',')]
     a_hidden_gnn = [int(d) for d in args.a_hidden_gnn.strip(',').split(',')]
     a_hidden_lin = [int(d) for d in args.a_hidden_lin.strip(',').split(',')]
@@ -145,7 +159,7 @@ def train():
                          'Parameters need change a little bit for other dataset.')
 
     ## Make generator model
-    model_params_gflow = Hyperparameters(b_n_type=b_n_type,  # 4,
+    model_params_gflow = FlowHyperPars(b_n_type=b_n_type,  # 4,
                                    b_n_flow=args.b_n_flow,
                                    b_n_block=args.b_n_block,
                                    b_n_squeeze=b_n_squeeze,
@@ -178,11 +192,29 @@ def train():
         multigpu = False
     gen = gen.to(device)
 
-    ## TODO: make discriminator model
-    model_params_dis = Hyperparameters(
-                                
-    )
-
+    ## Make discriminator model
+    model_params_disc = DiscHyperPars(b_n_type= b_n_type,  # 4
+                                      a_n_node= a_n_node,  # 9
+                                      a_n_type= a_n_type,  # 5
+                                      conv_dim= args.disc_conv_dim,  # [[128, 64], 128, [128, 64]]
+                                      with_features= args.disc_with_features,  # False
+                                      f_dim= args.disc_f_dim,  # 0
+                                      dropout_rate= args.disc_dropout_rate,  # 0.
+                                      activation= args.disc_activation,  # tanh
+                                      seed= args.seed
+                                      )
+    print('Discriminator params:')
+    model_params_disc.print()
+    disc = Discriminator(model_params_disc)
+    os.makedirs(args.sive_dir, exist_ok=True)
+    disc.save_hyperparams(os.path.join(args.save_dir, 'disc-params.json'))
+    if torch.cuda.device_count() > 1 and multigpu:
+        print("Let's use", torch.cuda.device_count(), "GPUs!")
+        # dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
+        gen = nn.DataParallel(disc)
+    else:
+        multigpu = False
+    disc = disc.to(device)
 
     # Datasets:
     dataset = NumpyTupleDataset.load(os.path.join(args.data_dir, data_file), transform=transform_fn)  # 133885
@@ -212,7 +244,7 @@ def train():
     print('==========================================')
 
 
-    # Loss and optimizer
+    # Optimizers
     optimizer_gen = torch.optim.Adam(gen.parameters(), lr=args.learning_rate, betas=(args.beta1, args.beta2))
 
     # Train the models
@@ -224,22 +256,31 @@ def train():
         for i, batch in enumerate(train_dataloader):
             optimizer_gen.zero_grad()
             # turn off shuffle to see the order with original code
-            x = batch[0].to(device)  # (256,9,5)
-            adj = batch[1].to(device)  # (256,4,9, 9)
+            x = batch[0].to(device)  # (256, 9, 5)
+            adj = batch[1].to(device)  # (256,4, 9, 9)
             adj_normalized = rescale_adj(adj).to(device)
 
-            # ========================================================
-            #         Generator training step
-            # ========================================================
+            # ==============================================================
+            #         Discriminator training step
+            # ==============================================================
 
 
-            # ========================================================
+            ## real batch training
+
+            ## fake batch training
+
+
+
+            # ==============================================================
             #         Generator training step
-            # ========================================================
+            # The generator is trained using the hybrid objective described
+            # by Ermon et al. (https://arxiv.org/abs/1705.08868)
+            # In short: L(x) = nll(x) + C * L_adv(x)
+            # ==============================================================
             ## Likelihood training step
             # forward pass through flow generator
             z, sum_log_det_jacs = gen(adj, x, adj_normalized)
-            # calculate loss
+            # calculate nll loss
             if multigpu:
                 nll = gen.module.log_prob(z, sum_log_det_jacs)
             else:
