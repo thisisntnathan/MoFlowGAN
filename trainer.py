@@ -399,8 +399,11 @@ def train():
                 '''
                 FlowGAN loss formulation
                 Flow: max ll == min nll
-                GANz; max theta L(theta) = log(D(G(z))) == min theta L(theta) = -log(D(G(z)))
+                GANz; max log(D(G(z))) == min -log(D(G(z)))
                 FlowGAN: min nll + -log(D(G(z)))
+
+                In the original FlowGAN paper objective is min -log(D(G(z))) + c * nll
+                May be a benefit to switching implementation around to match theirs?
                 '''
 
                 gan_loss = -logits_fake    # -log(D(G(z)))
