@@ -358,7 +358,7 @@ def train():
             grad0, grad1 = disc(x_int0, None, x_int1)
             grad_penalty = gradient_penalty(grad0, x_int0) + gradient_penalty(grad1, x_int1)
 
-            # compute losses
+            # compute wGAN losses + objective
             disc_loss_real = torch.mean(logits_real)
             disc_loss_fake = torch.mean(logits_fake)
             disc_loss = -disc_loss_real + disc_loss_fake + disc.lam * grad_penalty
@@ -395,11 +395,17 @@ def train():
                 # gumbel softmax
                 e_hat, n_hat = postprocess((edges, nodes), 'medium_gumbel')
                 # get fake batch logits
-                logits_fake, _ = disc(e_hat, None, n_hat)  # calculate GAN loss
+                logits_fake, _ = disc(e_hat, None, n_hat)  # calculate GAN loss | log(D(G(z)))
+                '''
+                FlowGAN loss formulation
+                Flow: max ll == min nll
+                GANz; max theta L(theta) = log(D(G(z))) == min theta L(theta) = -log(D(G(z)))
+                FlowGAN: min nll + -log(D(G(z)))
+                '''
 
-                gan_loss = -logits_fake
+                gan_loss = -logits_fake    # -log(D(G(z)))
 
-                gen_loss= nll_loss + c * gan_loss  # calculate total loss
+                gen_loss= nll_loss + c * gan_loss  # calculate total loss | nll + -log(D(G(z)))
                 gen_loss.backwards(retain_graph=True)  # backwards pass
 
                 optimizer_gen.step()  # update generator
