@@ -487,10 +487,10 @@ def train():
 
         # The same report for each epoch
             print('Epoch [{}/{}], Iter [{}/{}], gen_loss: {:.5f}, nll_x: {:.5f}, '
-                    'nll_adj: {:.5f}, C: {:.3f}, gan_loss: {:.5f}, disc_loss: {:.5f}, '
+                    'nll_adj: {:.5f}, adv: {:.3f}, gan_loss: {:.5f}, disc_loss: {:.5f}, '
                     'gen_training_iters: {}, {:.2f} sec/iter, {:.2f} iters/sec'.
                     format(epoch+1, args.max_epochs, i+1, iter_per_epoch, gen_loss.item(),
-                            nll[0].item(), nll[1].item(), c, gan_loss.item(), disc_losses[-1],
+                            nll[0].item(), nll[1].item(), adv, gan_loss.item(), disc_losses[-1],
                             gen_iter, tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
         tr.print_summary()
 
