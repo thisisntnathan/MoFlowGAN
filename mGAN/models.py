@@ -48,8 +48,8 @@ class Discriminator(nn.Module):
         self.f_dim= hyper_params.f_dim  # 0
 
         self.lam= hyper_params.lam  # 10
-
-        self.activation_f = hyper_params.activation
+        self.dropout_rate= hyper_params.dropout_rate  # 0
+        self.activation_f = nn.Tanh() if hyper_params.activation == 'tanh' else None
 
         # discriminator
         self.gcn_layer = GraphConvolution(self.a_n_type, self.graph_conv_dim, self.b_n_type, self.with_features, self.f_dim, self.dropout_rate)
@@ -59,7 +59,8 @@ class Discriminator(nn.Module):
         self.output_layer = nn.Linear(self.linear_dim[-1], 1)
 
     def forward(self, adj, hidden, node, activation=None):
-        adj = adj[:, :, :, 1:].permute(0, 3, 1, 2)
+        # print(adj.size)
+        # adj = adj[:, :, :, 1:].permute(0, 3, 1, 2)
         h_1 = self.gcn_layer(node, adj, hidden)
         h = self.agg_layer(h_1, node, hidden)
         h = self.multi_dense_layer(h)
@@ -68,6 +69,9 @@ class Discriminator(nn.Module):
         output = activation(output) if activation is not None else output
 
         return output, h
+
+    def save_hyperparams(self, path):
+        self.hyper_params.save(path)
 
 
 # class Discriminator2(nn.Module):
