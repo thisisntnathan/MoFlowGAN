@@ -251,7 +251,7 @@ def train():
                                       f_dim= args.disc_f_dim,  # 0
                                       lam= args.disc_lam,  # 10
                                       dropout_rate= args.disc_dropout_rate,  # 0.
-                                      activation= nn.Tanh() if args.disc_activation == 'tanh' else None,  # tanh
+                                      activation= args.disc_activation == 'tanh',  # tanh
                                       seed= args.seed
                                       )
     print('Discriminator params:')
