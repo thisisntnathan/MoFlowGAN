@@ -418,6 +418,7 @@ def train():
                 optimizer_gen.step()  # update generator
                 disc_losses.append(disc_losses[-1])
                 gen_losses.append(gen_loss.item())
+                gen_iter+= 1
             
 
             tr.update()
