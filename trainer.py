@@ -409,10 +409,13 @@ def train():
 
                 In the original FlowGAN paper objective is min -log(D(G(z))) + c * nll
                 May be a benefit to switching implementation around to match theirs?
+
+                Our implementation: min (1-c) * nll + c * -log(D(G(z)))
                 '''
                 gan_loss = -logits_fake.mean()    # -log(D(G(z)))
 
-                gen_loss= nll_loss + c * gan_loss  # calculate total loss | nll + -log(D(G(z)))
+                # gen_loss= nll_loss + c * gan_loss  # calculate total loss | nll + -log(D(G(z)))
+                gen_loss= (1 - c) * nll_loss + c * gan_loss  # calculate weighted total loss
                 gen_loss.backwards(retain_graph=True)  # backwards pass
 
                 optimizer_gen.step()  # update generator
@@ -425,10 +428,12 @@ def train():
 
             # Print log info
             if (i+1) % log_step == 0:  # i % args.log_step == 0:
-                print('Epoch [{}/{}], Iter [{}/{}], gen_loss: {:.5f}, disc_loss: {:.5f}'
-                      ', {:.2f} sec/iter, {:.2f} iters/sec: '.
+                print('Epoch [{}/{}], Iter [{}/{}], gen_loss: {:.5f}, disc_loss: {:.5f} '
+                      'disc_loss_reals: {:.3f}, disc_loss_fakes: {:.3f}, '
+                      '{:.2f} sec/iter, {:.2f} iters/sec'.
                       format(epoch+1, args.max_epochs, i+1, iter_per_epoch, gen_loss.item(),
-                             disc_losses[-1], tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
+                             disc_losses[-1], disc_loss_real, disc_loss_fake, 
+                             tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
                 tr.print_summary()
 
         if debug:
@@ -447,12 +452,12 @@ def train():
             print_validity(epoch+1)
 
         # The same report for each epoch
-            print('Epoch [{}/{}], Iter [{}/{}], gen_loss: {:.5f}, nll_x: {:.5f},'
-                    'nll_adj: {:.5f}, C: {:.5f}, gan_loss: {:.5f}, disc_loss: {:.5f},'
-                    '{:.2f} sec/iter, {:.2f} iters/sec: '.
+            print('Epoch [{}/{}], Iter [{}/{}], gen_loss: {:.5f}, nll_x: {:.5f}, '
+                    'nll_adj: {:.5f}, C: {:.3f}, gan_loss: {:.5f}, disc_loss: {:.5f}, '
+                    'gen_training_iters: {}, {:.2f} sec/iter, {:.2f} iters/sec'.
                     format(epoch+1, args.max_epochs, i+1, iter_per_epoch, gen_loss.item(),
-                            nll[0].item(), nll[1].item(), disc.lam, gan_loss.item(),
-                            disc_losses[-1], tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
+                            nll[0].item(), nll[1].item(), c, gan_loss.item(), disc_losses[-1],
+                            gen_iter, tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
         tr.print_summary()
 
         # Save the model checkpoints
