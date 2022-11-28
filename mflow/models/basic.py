@@ -152,7 +152,7 @@ class InvConv2dLU(nn.Module):
 
         w_p = torch.from_numpy(w_p)
         w_l = torch.from_numpy(w_l)
-        w_s = torch.from_numpy(w_s)
+        w_s = torch.from_numpy(np.array(w_s))
         w_u = torch.from_numpy(w_u)
 
         self.register_buffer('w_p', w_p)
