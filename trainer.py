@@ -257,7 +257,7 @@ def train():
     print('Discriminator params:')
     model_params_disc.print()
     disc = Discriminator(model_params_disc)
-    os.makedirs(args.sive_dir, exist_ok=True)
+    os.makedirs(args.save_dir, exist_ok=True)
     disc.save_hyperparams(os.path.join(args.save_dir, 'disc-params.json'))
     if torch.cuda.device_count() > 1 and multigpu:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
