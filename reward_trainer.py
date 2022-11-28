@@ -40,7 +40,8 @@ def get_parser():
     parser.add_argument('--load_snapshot', type=str, default='', help='load the model from this path')
 
     # optimization
-    parser.add_argument('-c', '--regularizer', type=float, default=1.0, help='GAN loss tradeoff multiplier')
+    parser.add_argument('--adv_regularizer', type=float, default=0.1, help='GAN loss tradeoff')
+    parser.add_argument('--rl_regularizer', type=float, default=0.1, help='Reward learning loss tradeoff')
     parser.add_argument('-l', '--learning_rate', type=float, default=0.001, help='Base learning rate')
     parser.add_argument('-e', '--lr_decay', type=float, default=0.999995,
                         help='Learning rate decay, applied every step of the optimization')
@@ -315,21 +316,22 @@ def train():
     print('Num Minibatch-size: {}'.format(args.batch_size))
     print('Num Iter/Epoch: {}'.format(len(train_dataloader)))
     print('Num epoch: {}'.format(args.max_epochs))
-    print('Regularization coefficient: {}'.format(args.regularizer))
+    print('Adversarial loss coefficient: {}'.format(args.adv_regularizer))
+    print('Reward loss coefficient: {}'.format(args.rl_regularizer))
     print('==========================================')
 
 
     # Loss and optimizers
-    optimizer_gen = torch.optim.Adam(list(self.gen.parameters())+list(self.rew.parameters(), 
-                                                                      lr=args.learning_rate, betas=(args.beta1, args.beta2))
+    optimizer_gen = torch.optim.Adam(list(gen.parameters()) + list(rew.parameters()), 
+                                    lr=args.learning_rate, betas=(args.beta1, args.beta2))
     optimizer_disc = torch.optim.Adam(disc.parameters(), lr=args.learning_rate, betas=(args.beta1, args.beta2))
-    c= args.regularizer
-
+    adv = args.adv_regularizer
+    rl = args.rl_regularizer
     
 
     # keep track of training
     disc_losses = []
-    rew_losses = []
+    rew_losses = [0]
     gen_losses = [0]
 
     # Train the models
@@ -388,13 +390,14 @@ def train():
 
             optimizer_disc.step()  # update discriminator
             disc_losses.append(disc_loss.item())
+            rew_losses.append(rew_losses[-1])
             gen_losses.append(gen_losses[-1])                       
 
             # ==============================================================
             #         Generator training step
             # The generator is trained using the hybrid objective described
             # by Ermon et al. (https://arxiv.org/abs/1705.08868)
-            # In short: L(x) = nll(x) + C * L_adv(x)
+            # In short: L(x) = nll(x) + adv * L_adv(x)
             # ==============================================================
             if train_gen or i == len(train_dataloader) - 1:
                 gen.zero_grad()
@@ -404,11 +407,11 @@ def train():
                 ## reward loss calculation step                    
                 # real batch 
                 pred_rewards_real, _ = rew(adj_onehot, None, x_onehot, activation = nn.Sigmoid())
-                rewards_real = # to-do, get reward performance scores on real data using max's stuff
+                rewards_real = -1 # TODO, get reward performance scores on real data using max's stuff
             
                 # get fake batch predicted rewards
                 pred_rewards_fake, _ = rew(e_hat, None, n_hat, activation = nn.Sigmoid())
-                rewards_fake = # to-do, get reward performance scores on fake data using max's stuff
+                rewards_fake = -1 # TODO get reward performance scores on fake data using max's stuff
                            # reward score must be 0 if molecule is not valid
 
                 # compute reward regression losses + objective
@@ -437,23 +440,20 @@ def train():
                 '''
                 FlowGAN loss formulation
                 Flow: max ll == min nll
-                GANz; max log(D(G(z))) == min -log(D(G(z)))
+                GAN; max log(D(G(z))) == min -log(D(G(z)))
                 FlowGAN: min nll + -log(D(G(z)))
 
-                In the original FlowGAN paper objective is min -log(D(G(z))) + c * nll
-                May be a benefit to switching implementation around to match theirs?
-
-                Our implementation: min (1-c) * nll + c * -log(D(G(z)))
+                Our implementation: min (1-c) * nll + adv * -log(D(G(z))) + rl * rew_loss
                 '''
                 gan_loss = -logits_fake.mean()    # -log(D(G(z)))
 
-                # gen_loss= nll_loss + c * gan_loss  # calculate total loss | nll + -log(D(G(z)))
-                gen_loss= (1 - c) * nll_loss + c * gan_loss + rew_loss  # calculate weighted total loss
-                                                                        # to-do, add hyper parameter for rew_loss weight
+                gen_loss= (1 - adv - rl) * nll_loss + adv * gan_loss + rl * rew_loss  # calculate weighted total loss
+                #TODO check if we shoudl be min/max the rew_loss --- may need to be -rew_loss
                 gen_loss.backwards(retain_graph=True)  # backwards pass
 
                 optimizer_gen.step()  # update generator
                 disc_losses.append(disc_losses[-1])
+                rew_losses.append(rew_loss.item())
                 gen_losses.append(gen_loss.item())
                 gen_iter+= 1
             
