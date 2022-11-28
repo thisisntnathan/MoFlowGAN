@@ -2,7 +2,7 @@ import json
 import os
 import sys
 # for linux env.
-sys.path.insert(0,'..')
+sys.path.insert(0,'.')
 import argparse
 from distutils.util import strtobool
 import torch
@@ -53,7 +53,7 @@ def get_parser():
     # data loader
     parser.add_argument('-b', '--batch_size', type=int, default=256, help='Batch size during training per GPU')
     parser.add_argument('--shuffle', type=strtobool, default='false', help='Shuffle the data batch')
-    parser.add_argument('--num_workers', type=int, default=0, help='Number of workers in the data loader')
+    parser.add_argument('--num_workers', type=int, default=2, help='Number of workers in the data loader')
 
     # # evaluation
     # parser.add_argument('--sample_batch_size', type=int, default=16,
@@ -91,7 +91,9 @@ def get_parser():
                          help='')
     parser.add_argument('--disc_dropout_rate',  type=float, default=0.0,
                          help='')
-    parser.add_argument('--disc_acitivation', type=function, default=nn.tanh(),
+    parser.add_argument('--disc_activation', type=str, default='tanh',
+                         help='')
+    parser.add_argument('--disc_lam', type=float, default=10.0,
                          help='')
 
     # General
@@ -247,9 +249,9 @@ def train():
                                       conv_dim= args.disc_conv_dim,  # [[128, 64], 128, [128, 64]]
                                       with_features= args.disc_with_features,  # False
                                       f_dim= args.disc_f_dim,  # 0
-                                      lam= args.lam,  # 10
+                                      lam= args.disc_lam,  # 10
                                       dropout_rate= args.disc_dropout_rate,  # 0.
-                                      activation= args.disc_activation,  # tanh
+                                      activation= nn.Tanh() if args.disc_activation == 'tanh' else None,  # tanh
                                       seed= args.seed
                                       )
     print('Discriminator params:')
@@ -268,8 +270,10 @@ def train():
     # auxiliary disciminator patch function
     def label_2_onehot(labels, dim):
         '''Convert label indices to one-hot vectors.'''
-        out = torch.zeros(list(labels.size()) + [dim]).to(device)
-        out.scatter_(len(out.size()) - 1, labels.unsqueeze(-1), 1.)
+        # out = torch.zeros(list(labels.size()) + [dim]).to(device)
+        # out.scatter_(len(out.size()) - 1, labels.unsqueeze(-1).type(torch.int64), 1.)
+        out = torch.zeros(list(labels.size())).to(device)
+        out.scatter_(len(out.size()) - 1, labels.type(torch.int64), 1.)
         return out
 
     # Datasets:
@@ -291,6 +295,7 @@ def train():
     print('==========================================')
     print('Load data done! Time {:.2f} seconds'.format(time.time() - start))
     print('Data shuffle: {}, Number of data loader workers: {}!'.format(args.shuffle, args.num_workers))
+    print('Device: {}!'.format(device))
     if args.gpu >= 0:
         print('Using GPU device:{}!'.format(args.gpu))
     print('Num Train-size: {}'.format(len(train)))
@@ -303,7 +308,7 @@ def train():
 
     # Loss and optimizers
     optimizer_gen = torch.optim.Adam(gen.parameters(), lr=args.learning_rate, betas=(args.beta1, args.beta2))
-    optimizer_disc = torch.optim.Adam(gen.parameters(), lr=args.learning_rate, betas=(args.beta1, args.beta2))
+    optimizer_disc = torch.optim.Adam(disc.parameters(), lr=args.learning_rate, betas=(args.beta1, args.beta2))
     c= args.regularizer
 
 
@@ -323,7 +328,7 @@ def train():
             adj = batch[1].to(device)  # (256,4, 9, 9)
             adj_normalized = rescale_adj(adj).to(device)
             x_onehot = label_2_onehot(x, a_n_type)
-            adj_normalized_onehot = label_2_onehot(adj, b_n_type)
+            adj_onehot = label_2_onehot(adj, b_n_type)
 
             # two time-scale training
             if gen_iter < 25 or gen_iter % 500 == 0:
@@ -337,11 +342,11 @@ def train():
             # objective described by Gulrajani et al. (https://arxiv.org/abs/1704.00028)
             # ==============================================================
             # zero gradients
-            gen.zero_gradients()
-            disc.zero_gradients()
+            gen.zero_grad()
+            disc.zero_grad()
 
             # real batch 
-            logits_real, _ = disc(x_onehot, None, adj_normalized_onehot)
+            logits_real, _ = disc(adj_onehot, None, x_onehot)
 
             # fake batch
             # reverse pass through generator
@@ -353,10 +358,10 @@ def train():
 
             # compute gradient penalty
             eps = torch.rand(logits_real.size(0), 1, 1, 1).to(device)
-            x_int0 = (eps * adj_normalized_onehot + (1. - eps) * e_hat).requires_grad_(True)
+            x_int0 = (eps * adj_onehot + (1. - eps) * e_hat).requires_grad_(True)
             x_int1 = (eps.squeeze(-1) * x_onehot + (1. - eps.squeeze(-1)) * n_hat).requires_grad_(True)
             grad0, grad1 = disc(x_int0, None, x_int1)
-            grad_penalty = gradient_penalty(grad0, x_int0) + gradient_penalty(grad1, x_int1)
+            grad_penalty = gradient_penalty(grad0, x_int0, device) + gradient_penalty(grad1, x_int1, device)
 
             # compute wGAN losses + objective
             disc_loss_real = torch.mean(logits_real)
@@ -376,8 +381,8 @@ def train():
             # In short: L(x) = nll(x) + C * L_adv(x)
             # ==============================================================
             if train_gen or i == len(train_dataloader) - 1:
-                gen.zero_gradients()
-                disc.zero_gradients()
+                gen.zero_grad()
+                disc.zero_grad()
 
                 ## likelihood training step
                 # forward pass through flow generator
@@ -405,8 +410,7 @@ def train():
                 In the original FlowGAN paper objective is min -log(D(G(z))) + c * nll
                 May be a benefit to switching implementation around to match theirs?
                 '''
-
-                gan_loss = -logits_fake    # -log(D(G(z)))
+                gan_loss = -logits_fake.mean()    # -log(D(G(z)))
 
                 gen_loss= nll_loss + c * gan_loss  # calculate total loss | nll + -log(D(G(z)))
                 gen_loss.backwards(retain_graph=True)  # backwards pass
