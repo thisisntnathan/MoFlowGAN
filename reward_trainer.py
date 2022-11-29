@@ -2,9 +2,10 @@ import json
 import os
 import sys
 # for linux env.
-sys.path.insert(0,'.')
+# sys.path.insert(0,'.')
 import argparse
 from distutils.util import strtobool
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -41,8 +42,8 @@ def get_parser():
     parser.add_argument('--load_snapshot', type=str, default='', help='load the model from this path')
 
     # optimization
-    parser.add_argument('--adv_regularizer', type=float, default=0.1, help='GAN loss tradeoff')
-    parser.add_argument('--rl_regularizer', type=float, default=0.1, help='Reward learning loss tradeoff')
+    parser.add_argument('--adv_reg', type=float, default=0.1, help='GAN loss tradeoff')
+    parser.add_argument('--rl_reg', type=float, default=0.1, help='Reward learning loss tradeoff')
     parser.add_argument('-l', '--learning_rate', type=float, default=0.001, help='Base learning rate')
     parser.add_argument('-e', '--lr_decay', type=float, default=0.999995,
                         help='Learning rate decay, applied every step of the optimization')
@@ -238,7 +239,6 @@ def train():
     gen.save_hyperparams(os.path.join(args.save_dir, 'gen-params.json'))
     if torch.cuda.device_count() > 1 and multigpu:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
-        # dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
         gen = nn.DataParallel(gen)
     else:
         multigpu = False
@@ -253,30 +253,30 @@ def train():
                                       f_dim= args.disc_f_dim,  # 0
                                       lam= args.disc_lam,  # 10
                                       dropout_rate= args.disc_dropout_rate,  # 0.
-                                      activation= nn.Tanh() if args.disc_activation == 'tanh' else None,  # tanh
+                                      activation= args.disc_activation,  # tanh
                                       seed= args.seed
                                       )
     print('Discriminator params:')
     model_params_disc.print()
     disc = Discriminator(model_params_disc)
-    os.makedirs(args.sive_dir, exist_ok=True)
+    os.makedirs(args.save_dir, exist_ok=True)
     disc.save_hyperparams(os.path.join(args.save_dir, 'disc-params.json'))
     if torch.cuda.device_count() > 1 and multigpu:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
-        # dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
-        gen = nn.DataParallel(disc)
+        disc = nn.DataParallel(disc)
     else:
         multigpu = False
     disc = disc.to(device)
     
     ## Make reward model
+    print('Reward network params:')
+    model_params_disc.print()
     rew = Discriminator(model_params_disc) # use same hyperparams as discriminator
-    os.makedirs(args.sive_dir, exist_ok=True)
-    disc.save_hyperparams(os.path.join(args.save_dir, 'rew-params.json'))
+    os.makedirs(args.save_dir, exist_ok=True)
+    rew.save_hyperparams(os.path.join(args.save_dir, 'rew-params.json'))
     if torch.cuda.device_count() > 1 and multigpu:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
-        # dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
-        gen = nn.DataParallel(disc)
+        rew = nn.DataParallel(rew)
     else:
         multigpu = False
     rew = rew.to(device)
@@ -317,8 +317,8 @@ def train():
     print('Num Minibatch-size: {}'.format(args.batch_size))
     print('Num Iter/Epoch: {}'.format(len(train_dataloader)))
     print('Num epoch: {}'.format(args.max_epochs))
-    print('Adversarial loss coefficient: {}'.format(args.adv_regularizer))
-    print('Reward loss coefficient: {}'.format(args.rl_regularizer))
+    print('Adversarial loss coefficient: {}'.format(args.adv_reg))
+    print('Reward loss coefficient: {}'.format(args.rl_reg))
     print('==========================================')
 
 
@@ -326,8 +326,8 @@ def train():
     optimizer_gen = torch.optim.Adam(list(gen.parameters()) + list(rew.parameters()), 
                                     lr=args.learning_rate, betas=(args.beta1, args.beta2))
     optimizer_disc = torch.optim.Adam(disc.parameters(), lr=args.learning_rate, betas=(args.beta1, args.beta2))
-    adv = args.adv_regularizer
-    rl = args.rl_regularizer
+    adv = args.adv_reg
+    rl = args.rl_reg
     
 
     # keep track of training
@@ -370,7 +370,7 @@ def train():
 
             # fake batch
             # reverse pass through generator
-            edges, nodes = gen.reverse(make_noise(x.size[0], a_n_node, a_n_type, b_n_type, device))
+            edges, nodes = gen.reverse(make_noise(x.size()[0], a_n_node, a_n_type, b_n_type, device))
             # gumbel softmax
             e_hat, n_hat = postprocess((edges, nodes), 'medium_gumbel')
             # get fake batch logits
@@ -387,7 +387,7 @@ def train():
             disc_loss_real = torch.mean(logits_real)
             disc_loss_fake = torch.mean(logits_fake)
             disc_loss = -disc_loss_real + disc_loss_fake + disc.lam * grad_penalty
-            disc_loss.backwards()  # backwards pass
+            disc_loss.backward()  # backwards pass
 
             optimizer_disc.step()  # update discriminator
             disc_losses.append(disc_loss.item())
@@ -419,7 +419,7 @@ def train():
 
                 ## adversarial training step
                 # generate a fake batch
-                edges, nodes = gen.reverse(make_noise(x.size[0], a_n_node, a_n_type, b_n_type, device))
+                edges, nodes = gen.reverse(make_noise(x.size()[0], a_n_node, a_n_type, b_n_type, device))
                 # gumbel softmax
                 e_hat, n_hat = postprocess((edges, nodes), 'medium_gumbel')
                 # get fake batch logits
@@ -429,21 +429,24 @@ def train():
                 ## reward loss training step                    
                 # real batch rewards
                 pred_rewards_real, _ = rew(adj_onehot, None, x_onehot, activation = nn.Sigmoid())
-                rewards_real = calculate_rewards(adj_onehot, x_onehot, atomic_num_list)
-                rewards_real = torch.from_numpy(rewards_real).to(device)
+                rewards_real = calculate_rewards(adj, x, atomic_num_list)
+                rewards_real = torch.from_numpy(rewards_real[:,np.newaxis]).to(device, dtype=torch.float32)
+                # print(pred_rewards_real.dtype, rewards_real.dtype)
+                # print('Real rewards done')
             
                 # fake batch rewards
                 pred_rewards_fake, _ = rew(e_hat, None, n_hat, activation = nn.Sigmoid())
-                
-                (e_hard, n_hard) = postprocess((edges, nodes, 'hard_gumbel'))
-                e_hard, n_hard = torch.max(e_hard, -1)[1], torch.max(n_hard, -1)[1]
+                (e_hard, n_hard) = postprocess((e_hat, n_hat), 'hard_gumbel')
+                # e_hard, n_hard = torch.max(e_hard, -1), torch.max(n_hard, -1)
                 rewards_fake = calculate_rewards(e_hard, n_hard, atomic_num_list)
-                rewards_fake = torch.from_numpy(rewards_fake).to(device)
+                rewards_fake = torch.from_numpy(rewards_fake[:,np.newaxis]).to(device, dtype=torch.float32)
+                # print(pred_rewards_fake.dtype,rewards_fake.dtype)
+                # print('Fake rewards done')
 
                 # compute reward regression losses
                 disc_loss_real = F.mse_loss(pred_rewards_real, rewards_real)
                 disc_loss_fake = F.mse_loss(pred_rewards_fake, rewards_fake)
-                rew_loss = (disc_loss_real + disc_loss_fake)/2     
+                rew_loss = (disc_loss_real + disc_loss_fake)/2
 
                 '''
                 FlowGAN loss formulation
@@ -456,7 +459,7 @@ def train():
                 gan_loss = -logits_fake.mean()    # -log(D(G(z)))
 
                 gen_loss= (1 - adv - rl) * nll_loss + adv * gan_loss + rl * rew_loss  # calculate weighted total loss
-                gen_loss.backwards(retain_graph=True)  # backwards pass
+                gen_loss.backward(retain_graph=True)  # backwards pass
 
                 optimizer_gen.step()  # update generator
                 disc_losses.append(disc_losses[-1])
@@ -510,12 +513,20 @@ def train():
                 torch.save(gen.module.state_dict(), os.path.join(
                 args.save_dir, 'model_snapshot_epoch_{}'.format(epoch + 1)))
             else:
-                torch.save(gen.state_dict(), os.path.join(
+                saveModel(gen, gen_losses, disc_losses, rew_losses, gen_iter, os.path.join(
                 args.save_dir, 'model_snapshot_epoch_{}'.format(epoch + 1)))
             tr.end()
 
     print("[Training Ends], Start at {}, End at {}".format(time.ctime(start), time.ctime()))
 
+def saveModel(G, gen_losses, disc_losses, rew_losses, gen_iters, path):
+    torch.save({
+        'GStateDict': G.state_dict(),
+        'gLosses': gen_losses,
+        'dLosses': disc_losses,
+        'rLosses': rew_losses,
+        'genIters': gen_iters,
+        }, path)
 
 if __name__ == '__main__':
     # with torch.autograd.set_detect_anomaly(True):
