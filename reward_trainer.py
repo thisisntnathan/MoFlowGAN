@@ -16,6 +16,7 @@ from mflow.models.model import MoFlow, rescale_adj
 from mflow.models.utils import check_validity, save_mol_png
 from mGAN.hyperparams import Hyperparameters as DiscHyperPars
 from mGAN.models import Discriminator
+from reward_loss import calculate_rewards
 
 import time
 from mflow.utils.timereport import TimeReport
@@ -321,7 +322,7 @@ def train():
     print('==========================================')
 
 
-    # Loss and optimizers
+    # loss and optimizers
     optimizer_gen = torch.optim.Adam(list(gen.parameters()) + list(rew.parameters()), 
                                     lr=args.learning_rate, betas=(args.beta1, args.beta2))
     optimizer_disc = torch.optim.Adam(disc.parameters(), lr=args.learning_rate, betas=(args.beta1, args.beta2))
@@ -343,7 +344,7 @@ def train():
         print("In epoch {}, Time: {}".format(epoch+1, time.ctime()))
         for i, batch in enumerate(train_dataloader):
             x = batch[0].to(device)  # (256, 9, 5)
-            adj = batch[1].to(device)  # (256,4, 9, 9)
+            adj = batch[1].to(device)  # (256, 4, 9, 9)
             adj_normalized = rescale_adj(adj).to(device)
             x_onehot = label_2_onehot(x, a_n_type)
             adj_onehot = label_2_onehot(adj, b_n_type)
@@ -397,28 +398,13 @@ def train():
             #         Generator training step
             # The generator is trained using the hybrid objective described
             # by Ermon et al. (https://arxiv.org/abs/1705.08868)
-            # In short: L(x) = nll(x) + adv * L_adv(x)
+            # See below for more details
             # ==============================================================
             if train_gen or i == len(train_dataloader) - 1:
                 gen.zero_grad()
                 disc.zero_grad()
                 rew.zero_grad()
-                                     
-                ## reward loss calculation step                    
-                # real batch 
-                pred_rewards_real, _ = rew(adj_onehot, None, x_onehot, activation = nn.Sigmoid())
-                rewards_real = -1 # TODO, get reward performance scores on real data using max's stuff
-            
-                # get fake batch predicted rewards
-                pred_rewards_fake, _ = rew(e_hat, None, n_hat, activation = nn.Sigmoid())
-                rewards_fake = -1 # TODO get reward performance scores on fake data using max's stuff
-                           # reward score must be 0 if molecule is not valid
 
-                # compute reward regression losses + objective
-                disc_loss_real = nn.functional.mse_loss(pred_rewards_real, rewards_real)
-                disc_loss_fake = nn.functional.mse_loss(pred_rewards_fake, rewards_fake)
-                rew_loss = (disc_loss_real + disc_loss_fake)/2                     
-                                     
 
                 ## likelihood training step
                 # forward pass through flow generator
@@ -430,6 +416,7 @@ def train():
                     nll = gen.log_prob(z, sum_log_det_jacs)
                 nll_loss = nll[0] + nll[1]
 
+
                 ## adversarial training step
                 # generate a fake batch
                 edges, nodes = gen.reverse(make_noise(x.size[0], a_n_node, a_n_type, b_n_type, device))
@@ -437,6 +424,27 @@ def train():
                 e_hat, n_hat = postprocess((edges, nodes), 'medium_gumbel')
                 # get fake batch logits
                 logits_fake, _ = disc(e_hat, None, n_hat)  # calculate GAN loss | log(D(G(z)))
+
+
+                ## reward loss training step                    
+                # real batch rewards
+                pred_rewards_real, _ = rew(adj_onehot, None, x_onehot, activation = nn.Sigmoid())
+                rewards_real = calculate_rewards(adj_onehot, x_onehot, atomic_num_list)
+                rewards_real = torch.from_numpy(rewards_real).to(device)
+            
+                # fake batch rewards
+                pred_rewards_fake, _ = rew(e_hat, None, n_hat, activation = nn.Sigmoid())
+                
+                (e_hard, n_hard) = postprocess((edges, nodes, 'hard_gumbel'))
+                e_hard, n_hard = torch.max(e_hard, -1)[1], torch.max(n_hard, -1)[1]
+                rewards_fake = calculate_rewards(e_hard, n_hard, atomic_num_list)
+                rewards_fake = torch.from_numpy(rewards_fake).to(device)
+
+                # compute reward regression losses
+                disc_loss_real = F.mse_loss(pred_rewards_real, rewards_real)
+                disc_loss_fake = F.mse_loss(pred_rewards_fake, rewards_fake)
+                rew_loss = (disc_loss_real + disc_loss_fake)/2     
+
                 '''
                 FlowGAN loss formulation
                 Flow: max ll == min nll
@@ -448,7 +456,6 @@ def train():
                 gan_loss = -logits_fake.mean()    # -log(D(G(z)))
 
                 gen_loss= (1 - adv - rl) * nll_loss + adv * gan_loss + rl * rew_loss  # calculate weighted total loss
-                #TODO check if we shoudl be min/max the rew_loss --- may need to be -rew_loss
                 gen_loss.backwards(retain_graph=True)  # backwards pass
 
                 optimizer_gen.step()  # update generator
