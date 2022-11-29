@@ -47,13 +47,12 @@ def constant_bump(x, x_low, x_high, decay=0.025):
                         default=np.ones_like(x))
 
 
-def reward_loss(edges, nodes, atomic_num_list, training_data=train_sparse, weights=None):
+def calculate_rewards(edges, nodes, atomic_num_list, training_data=train_sparse, weights=None):
     """
     weights is an iterable of numbers of length 8 corresponding to
     [np_score, water_octanol_partition, synthetic_accessibility, novelty, drug_candidacy, uniqueness, diversity, validity]
 
     Returns a batch-sized vector in which each entry is the product of the compounds individual scores
-
     """
     adj = edges.__array__()  # , gpu)  (bs,4,9,9)
     x = nodes.__array__()  # , gpu)  (bs,9,5)
