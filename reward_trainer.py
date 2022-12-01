@@ -56,7 +56,7 @@ def get_parser():
     # data loader
     parser.add_argument('-b', '--batch_size', type=int, default=256, help='Batch size during training per GPU')
     parser.add_argument('--shuffle', type=strtobool, default='true', help='Shuffle the data batch')
-    parser.add_argument('--num_workers', type=int, default=16, help='Number of workers in the data loader')
+    parser.add_argument('--num_workers', type=int, default=8, help='Number of workers in the data loader')
 
     # # evaluation
     # parser.add_argument('--sample_batch_size', type=int, default=16,
