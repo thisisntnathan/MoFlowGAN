@@ -56,7 +56,7 @@ def get_parser():
     # data loader
     parser.add_argument('-b', '--batch_size', type=int, default=256, help='Batch size during training per GPU')
     parser.add_argument('--shuffle', type=strtobool, default='false', help='Shuffle the data batch')
-    parser.add_argument('--num_workers', type=int, default=2, help='Number of workers in the data loader')
+    parser.add_argument('--num_workers', type=int, default=8, help='Number of workers in the data loader')
 
     # # evaluation
     # parser.add_argument('--sample_batch_size', type=int, default=16,
@@ -285,8 +285,6 @@ def train():
     # auxiliary disciminator patch function
     def label_2_onehot(labels, dim):
         '''Convert label indices to one-hot vectors.'''
-        # out = torch.zeros(list(labels.size()) + [dim]).to(device)
-        # out.scatter_(len(out.size()) - 1, labels.unsqueeze(-1).type(torch.int64), 1.)
         out = torch.zeros(list(labels.size())).to(device)
         out.scatter_(len(out.size()) - 1, labels.type(torch.int64), 1.)
         return out
@@ -323,9 +321,9 @@ def train():
 
 
     # loss and optimizers
-    optimizer_gen = torch.optim.Adam(list(gen.parameters()) + list(rew.parameters()), 
-                                    lr=args.learning_rate, betas=(args.beta1, args.beta2))
+    optimizer_gen = torch.optim.Adam(gen.parameters(), lr=args.learning_rate, betas=(args.beta1, args.beta2))
     optimizer_disc = torch.optim.Adam(disc.parameters(), lr=args.learning_rate, betas=(args.beta1, args.beta2))
+    optimizer_rew = torch.optim.Adam(rew.parameters(), lr=args.learning_rate, betas=(args.beta1, args.beta2))
     adv = args.adv_reg
     rl = args.rl_reg
     
@@ -346,14 +344,14 @@ def train():
             x = batch[0].to(device)  # (256, 9, 5)
             adj = batch[1].to(device)  # (256, 4, 9, 9)
             adj_normalized = rescale_adj(adj).to(device)
-            x_onehot = label_2_onehot(x, a_n_type)
-            adj_onehot = label_2_onehot(adj, b_n_type)
+            x_onehot = label_2_onehot(x, a_n_type).to(device)
+            adj_onehot = label_2_onehot(adj, b_n_type).to(device)
 
             # two time-scale training
             if gen_iter < 25 or gen_iter % 500 == 0:
-                train_gen = True if i % 100 == 0 else False
+                train_gen = True if i % 100 == 0 else False  #### TODO: Check this is 100
             else:
-                train_gen = True if i % 5 == 0 else False
+                train_gen = True if i % 8 == 0 else False
             
             # ==============================================================
             #         Discriminator training step
@@ -388,12 +386,13 @@ def train():
             disc_loss_fake = torch.mean(logits_fake)
             disc_loss = -disc_loss_real + disc_loss_fake + disc.lam * grad_penalty
             disc_loss.backward()  # backwards pass
-
             optimizer_disc.step()  # update discriminator
+            
             disc_losses.append(disc_loss.item())
             rew_losses.append(rew_losses[-1])
             gen_losses.append(gen_losses[-1])                       
-
+            
+            
             # ==============================================================
             #         Generator training step
             # The generator is trained using the hybrid objective described
@@ -409,7 +408,7 @@ def train():
                 ## likelihood training step
                 # forward pass through flow generator
                 z, sum_log_det_jacs = gen(adj, x, adj_normalized)
-                # calculate nll loss
+                # calculate nll
                 if multigpu:
                     nll = gen.module.log_prob(z, sum_log_det_jacs)
                 else:
@@ -424,15 +423,14 @@ def train():
                 e_hat, n_hat = postprocess((edges, nodes), 'medium_gumbel')
                 # get fake batch logits
                 logits_fake, _ = disc(e_hat, None, n_hat)  # calculate GAN loss | log(D(G(z)))
-
+                gan_loss = -logits_fake.mean()    # -log(D(G(z)))
+                
 
                 ## reward loss training step                    
                 # real batch rewards
                 pred_rewards_real, _ = rew(adj_onehot, None, x_onehot, activation = nn.Sigmoid())
                 rewards_real = calculate_rewards(adj, x, atomic_num_list)
                 rewards_real = torch.from_numpy(rewards_real[:,np.newaxis]).to(device, dtype=torch.float32)
-                # print(pred_rewards_real.dtype, rewards_real.dtype)
-                # print('Real rewards done')
             
                 # fake batch rewards
                 pred_rewards_fake, _ = rew(e_hat, None, n_hat, activation = nn.Sigmoid())
@@ -440,28 +438,44 @@ def train():
                 # e_hard, n_hard = torch.max(e_hard, -1), torch.max(n_hard, -1)
                 rewards_fake = calculate_rewards(e_hard, n_hard, atomic_num_list)
                 rewards_fake = torch.from_numpy(rewards_fake[:,np.newaxis]).to(device, dtype=torch.float32)
-                # print(pred_rewards_fake.dtype,rewards_fake.dtype)
-                # print('Fake rewards done')
-
-                # compute reward regression losses
-                disc_loss_real = F.mse_loss(pred_rewards_real, rewards_real)
-                disc_loss_fake = F.mse_loss(pred_rewards_fake, rewards_fake)
-                rew_loss = (disc_loss_real + disc_loss_fake)/2
+                rl_loss = -pred_rewards_fake.mean()
 
                 '''
-                FlowGAN loss formulation
-                Flow: max ll == min nll
-                GAN; max log(D(G(z))) == min -log(D(G(z)))
-                FlowGAN: min nll + -log(D(G(z)))
+                MoFlowGAN generator loss formulation
+                D: discriminator network
+                G: normalizing flow generator
+                R: reward network
+                z: latent vector
+                c: RL/Adv tradeoff parameter
+                a: molGAN alpha = loss_gan/loss_rl
 
-                Our implementation: min (1-c) * nll + adv * -log(D(G(z))) + rl * rew_loss
+                Flow: max [ll] == min [nll]
+                GAN: max [log(D(G(z)))] == min [-log(D(G(z)))]
+                molGAN w/ RL: min [c * -log(D(G(z))) + (1 - c) * a * R(G(z))]
+                FlowGAN: min[nll + -log(D(G(z))) + R(G(z))]
+
+                Our implementation: min (1-c) * nll + adv * -log(D(G(z))) + rl * a * fake_rew_logits
                 '''
-                gan_loss = -logits_fake.mean()    # -log(D(G(z)))
-
-                gen_loss= (1 - adv - rl) * nll_loss + adv * gan_loss + rl * rew_loss  # calculate weighted total loss
-                gen_loss.backward(retain_graph=True)  # backwards pass
-
+                # compute generator losses
+                if epoch + 1 <= 4: 
+                    rl = 0       # for the first few epochs don't use the RL objective to train the generator
+                    alpha = 0    # see molGAN paper for full explanation - https://arxiv.org/abs/1805.11973
+                else:
+                    with torch.no_grad():
+                        alpha = torch.abs(gan_loss / rl_loss)
+                
+                gen_loss = (1 - adv - rl) * nll_loss + (adv * gan_loss) + (rl * alpha * rl_loss)  # calculate weighted total loss
+                gen_loss.backward(retain_graph=True)  # backwards pass through generator
                 optimizer_gen.step()  # update generator
+
+
+                # compute reward network loss (MSE) - loss_V from molGAN
+                rew_loss = (pred_rewards_fake - rewards_fake) ** 2 + (pred_rewards_real - rewards_real) ** 2
+                rew_loss = rew_loss.mean()
+                rew_loss.backward()  # backwards pass through reward network
+                optimizer_rew.step()  # update reward network
+
+                # keep track of network losses
                 disc_losses.append(disc_losses[-1])
                 rew_losses.append(rew_loss.item())
                 gen_losses.append(gen_loss.item())
@@ -473,10 +487,10 @@ def train():
             # Print log info
             if (i+1) % log_step == 0:  # i % args.log_step == 0:
                 print('Epoch [{}/{}], Iter [{}/{}], gen_loss: {:.5f}, disc_loss: {:.5f} '
-                      'disc_loss_reals: {:.3f}, disc_loss_fakes: {:.3f}, '
+                      'disc_loss_reals: {:.3f}, disc_loss_fakes: {:.3f}, rew_loss: {:.5f} '
                       '{:.2f} sec/iter, {:.2f} iters/sec'.
                       format(epoch+1, args.max_epochs, i+1, iter_per_epoch, gen_loss.item(),
-                             disc_losses[-1], disc_loss_real, disc_loss_fake, 
+                             disc_losses[-1], disc_loss_real, disc_loss_fake, rew_losses[-1],
                              tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
                 tr.print_summary()
 
@@ -488,10 +502,10 @@ def train():
                 else:
                     adj, x = generate_mols(gen, batch_size=100, device=device)
                 valid_mols = check_validity(adj, x, atomic_num_list)['valid_mols']
-                mol_dir = os.path.join(args.save_dir, 'generated_{}'.format(ith))
-                os.makedirs(mol_dir, exist_ok=True)
-                for ind, mol in enumerate(valid_mols):
-                    save_mol_png(mol, os.path.join(mol_dir, '{}.png'.format(ind)))
+                # mol_dir = os.path.join(args.save_dir, 'generated_{}'.format(ith))
+                # os.makedirs(mol_dir, exist_ok=True)
+                # for ind, mol in enumerate(valid_mols):
+                #     save_mol_png(mol, os.path.join(mol_dir, '{}.png'.format(ind)))
                 gen.train()
             print_validity(epoch+1)
 
