@@ -17,7 +17,7 @@ from mflow.models.model import MoFlow, rescale_adj
 from mflow.models.utils import check_validity, save_mol_png
 from mGAN.hyperparams import Hyperparameters as DiscHyperPars
 from mGAN.models import Discriminator
-from reward_loss import calculate_rewards
+from mGAN.reward_loss import calculate_rewards
 
 import time
 from mflow.utils.timereport import TimeReport
