@@ -269,9 +269,20 @@ def train():
     disc = disc.to(device)
     
     ## Make reward model
+    model_params_rew = DiscHyperPars(b_n_type= b_n_type,  # 4
+                                  a_n_node= a_n_node,  # 9
+                                  a_n_type= a_n_type,  # 5
+                                  conv_dim= args.disc_conv_dim,  # [[128, 64], 128, [128, 64]]
+                                  with_features= args.disc_with_features,  # False
+                                  f_dim= args.disc_f_dim,  # 0
+                                  lam= 0,  # no gradient penalty
+                                  dropout_rate= args.disc_dropout_rate,  # 0.
+                                  activation= args.disc_activation,  # tanh
+                                  seed= args.seed
+                                  )
     print('Reward network params:')
-    model_params_disc.print()
-    rew = Discriminator(model_params_disc) # use same hyperparams as discriminator
+    model_params_rew.print()
+    rew = Discriminator(model_params_rew)
     os.makedirs(args.save_dir, exist_ok=True)
     rew.save_hyperparams(os.path.join(args.save_dir, 'rew-params.json'))
     if torch.cuda.device_count() > 1 and multigpu:
@@ -280,6 +291,9 @@ def train():
     else:
         multigpu = False
     rew = rew.to(device)
+    
+    print('Networks created!')
+    print('------------------------------------------')
 
 
     # auxiliary disciminator patch function
@@ -305,7 +319,7 @@ def train():
     train_dataloader = torch.utils.data.DataLoader(train, batch_size=args.batch_size,
                                                    shuffle=args.shuffle, num_workers=args.num_workers)
 
-    print('==========================================')
+    print('===========================================')
     print('Load data done! Time {:.2f} seconds'.format(time.time() - start))
     print('Data shuffle: {}, Number of data loader workers: {}!'.format(args.shuffle, args.num_workers))
     print('Device: {}!'.format(device))
@@ -317,7 +331,7 @@ def train():
     print('Num epoch: {}'.format(args.max_epochs))
     print('Adversarial loss coefficient: {}'.format(args.adv_reg))
     print('Reward loss coefficient: {}'.format(args.rl_reg))
-    print('==========================================')
+    print('===========================================')
 
 
     # loss and optimizers
@@ -329,7 +343,7 @@ def train():
     
 
     # keep track of training
-    disc_losses = []
+    disc_losses = [0]
     rew_losses = [0]
     gen_losses = [0]
 
@@ -388,7 +402,11 @@ def train():
             disc_loss.backward()  # backwards pass
             optimizer_disc.step()  # update discriminator
             
-            disc_losses.append(disc_loss.item())
+            d_loss = {'disc_loss': disc_loss.item(),
+                      'disc_loss_reals': disc_loss_real.item(),
+                      'disc_loss_fakes': disc_loss_fake.item(),
+                      'disc_grad_penalty': grad_penalty.item()}
+            disc_losses.append(d_loss)
             rew_losses.append(rew_losses[-1])
             gen_losses.append(gen_losses[-1])                       
             
@@ -478,7 +496,13 @@ def train():
                 # keep track of network losses
                 disc_losses.append(disc_losses[-1])
                 rew_losses.append(rew_loss.item())
-                gen_losses.append(gen_loss.item())
+                g_loss = {'gen_loss': gen_loss.item(),
+                          'nll_x': nll[0].item(),
+                          'nll_adj': nll[1].item(),
+                          'gan_loss': gan_loss.item(),
+                          'alpha': alpha,
+                          'pred_rewards_fakes': rl_loss.item()}
+                gen_losses.append(g_loss)
                 gen_iter+= 1
             
 
@@ -490,8 +514,8 @@ def train():
                       'disc_loss_reals: {:.3f}, disc_loss_fakes: {:.3f}, rew_loss: {:.5f} '
                       '{:.2f} sec/iter, {:.2f} iters/sec'.
                       format(epoch+1, args.max_epochs, i+1, iter_per_epoch, gen_loss.item(),
-                             disc_losses[-1], disc_loss_real, disc_loss_fake, rew_losses[-1],
-                             tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
+                             disc_losses[-1].get('disc_loss'), disc_loss_real, disc_loss_fake,
+                             rew_losses[-1], tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
                 tr.print_summary()
 
         if debug:
@@ -514,7 +538,7 @@ def train():
                     'nll_adj: {:.5f}, adv: {:.3f}, gan_loss: {:.5f}, disc_loss: {:.5f}, '
                     'gen_training_iters: {}, {:.2f} sec/iter, {:.2f} iters/sec'.
                     format(epoch+1, args.max_epochs, i+1, iter_per_epoch, gen_loss.item(),
-                            nll[0].item(), nll[1].item(), adv, gan_loss.item(), disc_losses[-1],
+                            nll[0].item(), nll[1].item(), adv, gan_loss.item(), disc_losses[-1].get('disc_loss'),
                             gen_iter, tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
         tr.print_summary()
 
@@ -527,19 +551,22 @@ def train():
                 torch.save(gen.module.state_dict(), os.path.join(
                 args.save_dir, 'model_snapshot_epoch_{}'.format(epoch + 1)))
             else:
-                saveModel(gen, gen_losses, disc_losses, rew_losses, gen_iter, os.path.join(
-                args.save_dir, 'model_snapshot_epoch_{}'.format(epoch + 1)))
+                path = args.save_dir + '/model_snapshot_epoch_{}.tar'.format(epoch + 1)
+                saveModel(gen, gen_losses, disc_losses, rew_losses, gen_iter, path)
+                print('Model checkpoint saved in {}'.format(path))
             tr.end()
 
-    print("[Training Ends], Start at {}, End at {}".format(time.ctime(start), time.ctime()))
+    print('===========================================')
+    print("Training Complete! Started at {}, Ended at {}".format(time.ctime(start), time.ctime()))
 
+    
 def saveModel(G, gen_losses, disc_losses, rew_losses, gen_iters, path):
     torch.save({
         'GStateDict': G.state_dict(),
         'gLosses': gen_losses,
         'dLosses': disc_losses,
         'rLosses': rew_losses,
-        'genIters': gen_iters,
+        'genIters': gen_iters
         }, path)
 
 if __name__ == '__main__':
