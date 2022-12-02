@@ -9,6 +9,7 @@ RDLogger.DisableLog('rdApp.*')
 from mflow.utils.molecular_metrics import *
 from mflow.models.utils import construct_mol, construct_mol_with_validation
 from data.sparse_molecular_dataset import SparseMolecularDataset
+from data.smile_to_graph import smiles_to_nodes_edges
 
 train_sparse= SparseMolecularDataset()
 train_sparse.load('./data/qm9_5k.sparsedataset')
@@ -107,3 +108,9 @@ def calculate_rewards(edges, nodes, atomic_num_list, training_data=train_sparse,
         scores = np.multiply(scores, weights)
     
     return scores.prod(axis=1).flatten()
+
+def reward_from_smiles(smiles):
+    '''currently meant to handle one smiles at a time'''
+    nodes, edges = smiles_to_nodes_edges(smile)
+    return calculate_rewards(torch.unsqueeze(edges,dim=0), torch.unsqueeze(nodes,dim=0), atomic_num_list) # what is atomic_num_list
+    

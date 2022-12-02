@@ -3,6 +3,13 @@ from rdkit import Chem
 import numpy
 from rdkit import Chem
 from rdkit.Chem import rdmolops
+from rdkit.Chem.rdmolfiles import MolFromSmiles
+
+def smiles_to_nodes_edges(smiles):
+    mol = MolFromSmiles(smiles)
+    edges = construct_discrete_edge_matrix(mol)
+    nodes = construct_atomic_number_array(mol)
+    return nodes, edges
 
 
 class GGNNPreprocessor(object):
