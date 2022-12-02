@@ -475,7 +475,7 @@ def train():
                 Our implementation: min (1-c) * nll + adv * -log(D(G(z))) + rl * a * fake_rew_logits
                 '''
                 # compute generator losses
-                if epoch + 1 <= 4: 
+                if epoch + 1 <= 9: 
                     rl = 0       # for the first few epochs don't use the RL objective to train the generator
                     alpha = 0    # see molGAN paper for full explanation - https://arxiv.org/abs/1805.11973
                 else:
@@ -501,7 +501,8 @@ def train():
                           'nll_adj': nll[1].item(),
                           'gan_loss': gan_loss.item(),
                           'alpha': alpha,
-                          'pred_rewards_fakes': rl_loss.item()}
+                          'pred_rewards_fakes': rl_loss.item(),
+                          'rew_net_loss': rew_loss.item()}
                 gen_losses.append(g_loss)
                 gen_iter+= 1
             
@@ -510,15 +511,21 @@ def train():
 
             # Print log info
             if (i+1) % log_step == 0:  # i % args.log_step == 0:
-                print('Epoch [{}/{}], Iter [{}/{}], gen_loss: {:.5f}, disc_loss: {:.5f}, '
-                      'disc_loss_reals: {:.3f}, disc_loss_fakes: {:.3f}, rew_loss: {:.5f} '
-                      '{:.2f} sec/iter, {:.2f} iters/sec'.
-                      format(epoch+1, args.max_epochs, i+1, iter_per_epoch, gen_loss.item(),
-                             disc_losses[-1].get('disc_loss'), disc_loss_real, disc_loss_fake,
-                             rew_losses[-1], tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
+                print('Epoch [{}/{}], Iter [{}/{}], gen_training_iters: {}, {:.2f} sec/iter, {:.2f} iters/sec\n'
+                      'gen_loss: {:.5f}, nll_x: {:.5f}, nll_adj: {:.5f}, gan_loss: {:.5f},\n'
+                      'alpha: {:.5f}, rl_loss_fakes: {:.5f}, rew_net_loss: {:.5f},\n'
+                      'disc_loss: {:.5f}, disc_loss_reals: {:.3f}, disc_loss_fakes: {:.3f}'.
+                        format(epoch+1, args.max_epochs, i+1, iter_per_epoch, gen_iter, 
+                               tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec(),
+                               gen_losses[-1].get('gen_loss'), gen_losses[-1].get('nll_x'),
+                               gen_losses[-1].get('nll_adj'), gen_losses[-1].get('gan_loss'),
+                               gen_losses[-1].get('alpha'), gen_losses[-1].get('pred_rewards_fakes'), 
+                               gen_losses[-1].get('rew_net_loss'), disc_losses[-1].get('disc_loss'), 
+                               disc_losses[-1].get('disc_loss_reals'), disc_losses[-1].get('disc_loss_fakes')))
                 tr.print_summary()
-
-        if debug:
+                
+        save_epochs = args.save_epochs
+        if debug and ((epoch + 1) % save_epochs == 0):
             gen.eval()
             if multigpu:
                 adj, x = generate_mols(gen.module, batch_size=100, device=device)
@@ -532,16 +539,21 @@ def train():
             gen.train()
 
         # The same report for each epoch
-        print('Epoch [{}/{}], Iter [{}/{}], gen_loss: {:.5f}, nll_x: {:.5f}, '
-                'nll_adj: {:.5f}, adv: {:.3f}, gan_loss: {:.5f}, disc_loss: {:.5f}, '
-                'gen_training_iters: {}, {:.2f} sec/iter, {:.2f} iters/sec'.
-                format(epoch+1, args.max_epochs, i+1, iter_per_epoch, gen_loss.item(),
-                        nll[0].item(), nll[1].item(), adv, gan_loss.item(), disc_losses[-1].get('disc_loss'),
-                        gen_iter, tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
+        print('Epoch [{}/{}], Iter [{}/{}], gen_training_iters: {}, {:.2f} sec/iter, {:.2f} iters/sec\n'
+              'gen_loss: {:.5f}, nll_x: {:.5f}, nll_adj: {:.5f}, gan_loss: {:.5f},\n'
+              'alpha: {:.5f}, rl_loss_fakes: {:.5f}, rew_net_loss: {:.5f},\n'
+              'disc_loss: {:.5f}, disc_loss_reals: {:.3f}, disc_loss_fakes: {:.3f}'.
+                format(epoch+1, args.max_epochs, i+1, iter_per_epoch, gen_iter, 
+                       tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec(),
+                       gen_losses[-1].get('gen_loss'), gen_losses[-1].get('nll_x'),
+                       gen_losses[-1].get('nll_adj'), gen_losses[-1].get('gan_loss'),
+                       gen_losses[-1].get('alpha'), gen_losses[-1].get('pred_rewards_fakes'), 
+                       gen_losses[-1].get('rew_net_loss'), disc_losses[-1].get('disc_loss'), 
+                       disc_losses[-1].get('disc_loss_reals'), disc_losses[-1].get('disc_loss_fakes')))
+        tr.print_summary()
         print('-------------------------------------------')
 
         # Save the model checkpoints
-        save_epochs = args.save_epochs
         if save_epochs == -1:
             save_epochs = args.max_epochs
         if ((epoch + 1) % save_epochs == 0) or (epoch + 1 == args.max_epochs):
