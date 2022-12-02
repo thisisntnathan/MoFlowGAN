@@ -292,8 +292,8 @@ def train():
         multigpu = False
     rew = rew.to(device)
     
-    print('Networks created!')
-    print('------------------------------------------')
+    print('Networks created! Loading dataset...')
+    print('-------------------------------------------')
 
 
     # auxiliary disciminator patch function
@@ -326,7 +326,7 @@ def train():
     if args.gpu >= 0:
         print('Using GPU device:{}!'.format(args.gpu))
     print('Num Train-size: {}'.format(len(train)))
-    print('Num Minibatch-size: {}'.format(args.batch_size))
+    print('Num Minibatch size: {}'.format(args.batch_size))
     print('Num Iter/Epoch: {}'.format(len(train_dataloader)))
     print('Num epoch: {}'.format(args.max_epochs))
     print('Adversarial loss coefficient: {}'.format(args.adv_reg))
@@ -510,7 +510,7 @@ def train():
 
             # Print log info
             if (i+1) % log_step == 0:  # i % args.log_step == 0:
-                print('Epoch [{}/{}], Iter [{}/{}], gen_loss: {:.5f}, disc_loss: {:.5f} '
+                print('Epoch [{}/{}], Iter [{}/{}], gen_loss: {:.5f}, disc_loss: {:.5f}, '
                       'disc_loss_reals: {:.3f}, disc_loss_fakes: {:.3f}, rew_loss: {:.5f} '
                       '{:.2f} sec/iter, {:.2f} iters/sec'.
                       format(epoch+1, args.max_epochs, i+1, iter_per_epoch, gen_loss.item(),
@@ -519,28 +519,26 @@ def train():
                 tr.print_summary()
 
         if debug:
-            def print_validity(ith):
-                gen.eval()
-                if multigpu:
-                    adj, x = generate_mols(gen.module, batch_size=100, device=device)
-                else:
-                    adj, x = generate_mols(gen, batch_size=100, device=device)
-                valid_mols = check_validity(adj, x, atomic_num_list)['valid_mols']
-                # mol_dir = os.path.join(args.save_dir, 'generated_{}'.format(ith))
-                # os.makedirs(mol_dir, exist_ok=True)
-                # for ind, mol in enumerate(valid_mols):
-                #     save_mol_png(mol, os.path.join(mol_dir, '{}.png'.format(ind)))
-                gen.train()
-            print_validity(epoch+1)
+            gen.eval()
+            if multigpu:
+                adj, x = generate_mols(gen.module, batch_size=100, device=device)
+            else:
+                adj, x = generate_mols(gen, batch_size=100, device=device)
+            valid_mols = check_validity(adj, x, atomic_num_list)['valid_mols']
+            # mol_dir = os.path.join(args.save_dir, 'generated_{}'.format(ith))
+            # os.makedirs(mol_dir, exist_ok=True)
+            # for ind, mol in enumerate(valid_mols):
+            #     save_mol_png(mol, os.path.join(mol_dir, '{}.png'.format(ind)))
+            gen.train()
 
         # The same report for each epoch
-            print('Epoch [{}/{}], Iter [{}/{}], gen_loss: {:.5f}, nll_x: {:.5f}, '
-                    'nll_adj: {:.5f}, adv: {:.3f}, gan_loss: {:.5f}, disc_loss: {:.5f}, '
-                    'gen_training_iters: {}, {:.2f} sec/iter, {:.2f} iters/sec'.
-                    format(epoch+1, args.max_epochs, i+1, iter_per_epoch, gen_loss.item(),
-                            nll[0].item(), nll[1].item(), adv, gan_loss.item(), disc_losses[-1].get('disc_loss'),
-                            gen_iter, tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
-        tr.print_summary()
+        print('Epoch [{}/{}], Iter [{}/{}], gen_loss: {:.5f}, nll_x: {:.5f}, '
+                'nll_adj: {:.5f}, adv: {:.3f}, gan_loss: {:.5f}, disc_loss: {:.5f}, '
+                'gen_training_iters: {}, {:.2f} sec/iter, {:.2f} iters/sec'.
+                format(epoch+1, args.max_epochs, i+1, iter_per_epoch, gen_loss.item(),
+                        nll[0].item(), nll[1].item(), adv, gan_loss.item(), disc_losses[-1].get('disc_loss'),
+                        gen_iter, tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
+        print('-------------------------------------------')
 
         # Save the model checkpoints
         save_epochs = args.save_epochs
@@ -557,7 +555,22 @@ def train():
             tr.end()
 
     print('===========================================')
-    print("Training Complete! Started at {}, Ended at {}".format(time.ctime(start), time.ctime()))
+    print('Training complete after {} epochs. Generating sample batch...'.format(args.max_epochs))
+    print('-------------------------------------------')
+    gen.eval()
+    if multigpu:
+        adj, x = generate_mols(gen.module, batch_size=100, device=device)
+    else:
+        adj, x = generate_mols(gen, batch_size=100, device=device)
+    valid_mols = check_validity(adj, x, atomic_num_list)['valid_mols']
+    # mol_dir = os.path.join(args.save_dir, 'generated_{}'.format(ith))
+    # os.makedirs(mol_dir, exist_ok=True)
+    # for ind, mol in enumerate(valid_mols):
+    #     save_mol_png(mol, os.path.join(mol_dir, '{}.png'.format(ind)))
+    gen.train()
+    print('===========================================')
+    print('Model results saved in: {}'.format(args.save_dir))
+    print("Started: {}, Ended: {}".format(time.ctime(start), time.ctime()))
 
     
 def saveModel(G, gen_losses, disc_losses, rew_losses, gen_iters, path):
