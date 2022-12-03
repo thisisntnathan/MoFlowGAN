@@ -87,7 +87,7 @@ def score_model(path, return_properties=False):
     Takes the path to a pre-trained model checkpoint, generates 1000 molecules, and scores them
 
     Returns:
-    nuvd: [novelty, uniquiness, validity, diversity]
+    nuvd: [novelty, uniqueness, validity, diversity]
     avg_scores: avg[np_likeness, logP, SA, QED, drug candidacy]
     properties: per molecule properties (if return_properties=True)
     '''
