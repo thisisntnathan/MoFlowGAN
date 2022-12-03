@@ -475,7 +475,7 @@ def train():
                 Our implementation: min (1-c) * nll + adv * -log(D(G(z))) + rl * a * fake_rew_logits
                 '''
                 # compute generator losses
-                if epoch + 1 <= 9: 
+                if epoch + 1 <= args.max_epochs // 2: 
                     rl = 0       # for the first few epochs don't use the RL objective to train the generator
                     alpha = 0    # see molGAN paper for full explanation - https://arxiv.org/abs/1805.11973
                 else:
