@@ -9,7 +9,6 @@ RDLogger.DisableLog('rdApp.*')
 from mflow.utils.molecular_metrics import *
 from mflow.models.utils import construct_mol, construct_mol_with_validation
 from data.sparse_molecular_dataset import SparseMolecularDataset
-from data.smile_to_graph import smiles_to_nodes_edges
 
 train_sparse= SparseMolecularDataset()
 train_sparse.load('./data/qm9_5k.sparsedataset')
@@ -24,20 +23,34 @@ def normalize(data):
 
 
 def synthetic_accessibility_scores(sanitized_mols):
-    scores = [sa.calculateScore(mol) if mol is not None else None for mol in sanitized_mols]  # [None | 10, 1]
-    scores = np.array(list(map(lambda x: -10 if x is None else -x, scores)))  # [-10, -1]
-    return normalize(scores)  # [0, 1]
+    '''
+    Synthetic acessability score
+    Originally: [1, 10] - lower is better
+    Modified: [0.1, 1] - higher is better
+    
+    http://www.jcheminf.com/content/1/1/8
+    '''
+    scores = np.array([-sa.calculateScore(mol) if mol is not None 
+                       else -10 for mol in sanitized_mols])  # [-10, -1]
+    return (scores + 11) / 10  # [0, 1]
 
 
 def natural_product_scores(sanitized_mols):
+    '''
+    Ertl's natural product likness scores
+    Originally: [-5, 5] - higher is better
+    Modified: [0, 1] - higher is better
+    
+    http://pubs.acs.org/doi/abs/10.1021/ci700286x
+    '''
     scores = np.array([natp.scoreMol(mol, fscore) if mol is not None 
-                       else None for mol in sanitized_mols])
-    return normalize(scores)  # [0, 1]
+                       else -5 for mol in sanitized_mols])  # [-5, 5]
+    return (scores + 5) / 10  # [0, 1]
 
 
 def drug_candidate_scores(logP, syn_acc, nov):
     scores = (constant_bump(logP, 0.210, 0.945) + syn_acc + nov + (1 - nov) * 0.3) / 4
-    return normalize(scores)
+    return scores # open ended
 
 
 def constant_bump(x, x_low, x_high, decay=0.025):
@@ -49,10 +62,16 @@ def constant_bump(x, x_low, x_high, decay=0.025):
 
 def calculate_rewards(edges, nodes, atomic_num_list, training_data=train_sparse, weights=None):
     """
-    weights is an iterable of numbers of length 8 corresponding to
-    [np_score, water_octanol_partition, synthetic_accessibility, novelty, drug_candidacy, uniqueness, diversity, validity]
+    
+    In:
+    edges, nodes: adjacency and label tensors/matrices corresponding to molecules
+    atomic_number_list: decoding key for elements of atoms
+    training_data: dataset used to evaluate novelty and diversity (right now just a sparse subset)
+    weights: vector of length 7 used to weigh molecule scores. Orderd:
+    [np_score, water_octanol_partition, synthetic_accessibility, novelty, uniqueness, diversity, validity]
 
-    Returns a batch-sized vector in which each entry is the product of the compounds individual scores
+    Out:
+    batch-sized vector in which each entry is the product of the compounds individual scores
     """    
     def to_mol(adj_x):
         adj_elem, x_elem = adj_x
@@ -64,43 +83,43 @@ def calculate_rewards(edges, nodes, atomic_num_list, training_data=train_sparse,
     
     def clean_sanitize(mol):
         '''
-        There's an issue with trying to sanitize fake molecules
+        There's an issue with trying to sanitize fake molecules.
+        Sanitization doesn't remove/mark invalid so we use flags as a mask
+        0 - invalid
+        1 - valid and sanitized
+        
         Solution adapted from: https://github.com/rdkit/rdkit/issues/2216
         '''
         try:
             Chem.SanitizeMol(mol)
+            return 1
         except:
-            try:
-                Chem.FastFindRings(mol)  # this is not Chem.FindFastRings()
-                mol.UpdatePropertyCache()
-                mol.calcImplicitValence()
-            except:
-                return None
-    
+            return 0
+
     adj = edges.cpu().__array__()  # (bs,4,9,9)
     x = nodes.cpu().__array__()  # (bs,9,5)
             
     mols = list(map(to_mol, zip(adj, x)))
-    # valid_mols = list(map(to_validated_mol, zip(adj, x)))
-    # sanitized_flags = list(map(clean_sanitize, valid_mols))
+    valid_mols = list(map(to_validated_mol, zip(adj, x)))
+    flags = list(map(clean_sanitize, valid_mols))  # see clean_sanitize spec
+    sani_mols = [mol if validity == 1 else None for mol, validity in zip(valid_mols, flags)]
 
     mm = MolecularMetrics()
-    water_octanol_partition = mm.water_octanol_partition_coefficient_scores(mols, norm=True).reshape(-1,1) # vec - [0, 1]
-    novelty = mm.novel_scores(mols, training_data).reshape(-1,1)  # vec - [0, 1]
-    uniqueness = mm.unique_scores(mols).reshape(-1,1)  # vec - [0, 1]
-    validity = mm.valid_scores(mols).reshape(-1,1)  # vec - [0, 1]
-    qed = mm.quantitative_estimation_druglikeness_scores(mols, norm=True).reshape(-1,1)  # vec - [0, 1]
+    water_octanol_partition = mm.water_octanol_partition_coefficient_scores(mols, norm=True).flatten().reshape(-1,1) # vec - [0, 1]
+    novelty = mm.novel_scores(mols, training_data).flatten().reshape(-1,1)  # vec - [0, 1]
+    uniqueness = mm.unique_scores(mols).flatten().reshape(-1,1)  # vec - [0, 1]
+    validity = mm.valid_scores(mols).flatten().reshape(-1,1)  # vec - [0, 1]
+    qed = mm.quantitative_estimation_druglikeness_scores(mols, norm=True).flatten().reshape(-1,1)  # vec - [0, 1]
 
-    # np_score = natural_product_scores(valid_mols).reshape(-1,1)  # vec - [0, 1]
-    # synthetic_accessibility = synthetic_accessibility_scores(valid_mols).reshape(-1,1)  # vec - [0, 1]
-    # diversity = mm.diversity_scores(valid_mols, training_data).reshape(-1,1) # vec - [0, 1]
+    np_score = natural_product_scores(sani_mols).reshape(-1,1)  # vec - [0, 1]
+    synthetic_accessibility = synthetic_accessibility_scores(sani_mols).reshape(-1,1)  # vec - [0, 1]
+    diversity = mm.diversity_scores(sani_mols, training_data).reshape(-1,1) # vec - [0, 1]
     # drug_candidacy = drug_candidate_scores(water_octanol_partition, 
         # synthetic_accessibility, novelty).reshape(-1,1)  # vec - [0,1]
 
-    # scores = np.hstack((np_score, water_octanol_partition, synthetic_accessibility, 
-    #                     novelty, drug_candidacy, uniqueness, diversity, validity, qed))
-    
-    scores = np.hstack((water_octanol_partition, novelty, uniqueness, validity, qed))
+    scores = np.hstack((np_score, water_octanol_partition, synthetic_accessibility, 
+                        novelty, uniqueness, diversity, validity, qed))
+
 
     if weights != None:
         weights= np.array(weights).flatten()
@@ -108,6 +127,7 @@ def calculate_rewards(edges, nodes, atomic_num_list, training_data=train_sparse,
         scores = np.multiply(scores, weights)
     
     return scores.prod(axis=1).flatten()
+
 
 def reward_from_smiles(smiles):
     '''currently meant to handle one smiles at a time'''
