@@ -88,7 +88,7 @@ def score_model(path, return_properties=False):
 
     Returns:
     nuvd: [novelty, uniqueness, validity, diversity]
-    avg_scores: avg[np_likeness, logP, SA, QED, drug candidacy]
+    avg_scores: avg[np likeness, logP, SA, QED, drug candidacy]
     properties: per molecule properties (if return_properties=True)
     '''
     model_params_gflow = FlowHyperPars(b_n_type=4,
