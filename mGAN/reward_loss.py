@@ -48,18 +48,6 @@ def natural_product_scores(sanitized_mols):
     return (scores + 5) / 10  # [0, 1]
 
 
-def drug_candidate_scores(logP, syn_acc, nov):
-    scores = (constant_bump(logP, 0.210, 0.945) + syn_acc + nov + (1 - nov) * 0.3) / 4
-    return scores # open ended
-
-
-def constant_bump(x, x_low, x_high, decay=0.025):
-    return np.select(condlist=[x <= x_low, x >= x_high],
-                        choicelist=[np.exp(- (x - x_low) ** 2 / decay),
-                                    np.exp(- (x - x_high) ** 2 / decay)],
-                        default=np.ones_like(x))
-
-
 def calculate_rewards(edges, nodes, atomic_num_list, training_data=train_sparse, weights=None):
     """
     
@@ -114,8 +102,6 @@ def calculate_rewards(edges, nodes, atomic_num_list, training_data=train_sparse,
     np_score = natural_product_scores(sani_mols).reshape(-1,1)  # vec - [0, 1]
     synthetic_accessibility = synthetic_accessibility_scores(sani_mols).reshape(-1,1)  # vec - [0, 1]
     diversity = mm.diversity_scores(sani_mols, training_data).reshape(-1,1) # vec - [0, 1]
-    # drug_candidacy = drug_candidate_scores(water_octanol_partition, 
-        # synthetic_accessibility, novelty).reshape(-1,1)  # vec - [0,1]
 
     scores = np.hstack((np_score, water_octanol_partition, synthetic_accessibility, 
                         novelty, uniqueness, diversity, validity, qed))
@@ -128,9 +114,3 @@ def calculate_rewards(edges, nodes, atomic_num_list, training_data=train_sparse,
     
     return scores.prod(axis=1).flatten()
 
-
-def reward_from_smiles(smiles):
-    '''currently meant to handle one smiles at a time'''
-    nodes, edges = smiles_to_nodes_edges(smile)
-    return calculate_rewards(torch.unsqueeze(edges,dim=0), torch.unsqueeze(nodes,dim=0), atomic_num_list) # what is atomic_num_list
-    
