@@ -47,7 +47,7 @@ def get_parser():
     parser.add_argument('-l', '--learning_rate', type=float, default=0.001, help='Base learning rate')
     parser.add_argument('-e', '--lr_decay', type=float, default=0.999995,
                         help='Learning rate decay, applied every step of the optimization')
-    parser.add_argument('-b1', '--beta1', type=float, default=0.9, help='Beta1 for Adam optimizer')
+    parser.add_argument('-b1', '--beta1', type=float, default=0.5, help='Beta1 for Adam optimizer')
     parser.add_argument('-b2', '--beta2', type=float, default=0.999, help='Beta2 for Adam optimizer')
     parser.add_argument('-x', '--max_epochs', type=int, default=5000, help='How many epochs to run in total?')
     parser.add_argument('-g', '--gpu', type=int, default=0, help='GPU Id to use')
