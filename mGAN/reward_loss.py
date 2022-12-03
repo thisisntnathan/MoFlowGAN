@@ -106,7 +106,6 @@ def calculate_rewards(edges, nodes, atomic_num_list, training_data=train_sparse,
     scores = np.hstack((np_score, water_octanol_partition, synthetic_accessibility, 
                         novelty, uniqueness, diversity, validity, qed))
 
-
     if weights != None:
         weights= np.array(weights).flatten()
         weights= np.broadcast_to(weights, scores.shape)
