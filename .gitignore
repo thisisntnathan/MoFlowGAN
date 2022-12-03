@@ -6,6 +6,9 @@ mflow/fig/*
 # WIP files
 wip/*
 
+# main
+main.ipynb
+
 ## Standard python stuff
 
 # Byte-compiled / optimized / DLL files
