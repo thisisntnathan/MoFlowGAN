@@ -3,6 +3,9 @@
 # moflow figure direcctory
 mflow/fig/*
 
+# WIP files
+wip/*
+
 ## Standard python stuff
 
 # Byte-compiled / optimized / DLL files
