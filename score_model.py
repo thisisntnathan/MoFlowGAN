@@ -86,6 +86,9 @@ def score_model(path, return_properties=False):
     '''
     Takes the path to a pre-trained model checkpoint, generates 1000 molecules, and scores them
 
+    #FIXME!!! For some reason this function returns (nuvd, avg_scores, nuvd, avg_scores)
+    Not entirely sure why, but temporary usage: nuvd, avg_scores,_,_ = score_model(path)
+
     Returns:
     nuvd: [novelty, uniqueness, validity, diversity]
     avg_scores: avg[np likeness, logP, SA, QED, drug candidacy]
@@ -117,7 +120,7 @@ def score_model(path, return_properties=False):
 
     adj, x = generate_mols(gen, batch_size=1000)
     nuvd, properties = evaluate_scores(adj, x)
-    nuvd = nuvd.tolist()
-    avg_scores = properties.mean(axis=0).flatten().tolist()
-    return nuvd, avg_scores, properties if return_properties else nuvd, avg_scores
+    avg_scores = np.mean(properties, axis=0).flatten()
+    if return_properties: return nuvd, avg_scores, properties
+    else: return nuvd, avg_scores
 
