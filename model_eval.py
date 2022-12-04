@@ -53,6 +53,10 @@ def score_model(path, num_expt=1, return_properties=False):
 
 def score_reconstruction(path, gpu=-1):
     '''
+    Takes the path to a pre-trained model and uses it to reconstruct the training data from its latent representation
+
+    Returns:
+    reconstruction_rate: rate of reconstruction for training data
     '''
     # load pre-trained model from checkpoint
     gen = load_model(path)
@@ -105,7 +109,7 @@ def score_reconstruction(path, gpu=-1):
 ## auxiliary scoring functions
 def load_model(path):
     '''
-    Loads a model from the checkpoint file that is set to evaluation mode
+    Loads a model from the checkpoint file
     '''
     model_params_gflow = FlowHyperPars(b_n_type=4,
                                b_n_flow=10,
@@ -128,9 +132,8 @@ def load_model(path):
                                noise_scale=0.6
                                )
     gen = MoFlow(model_params_gflow)
-    chk = torch.load(path)
+    chk = torch.load(path, map_location='cpu')
     gen.load_state_dict(chk['GStateDict'])
-    gen.eval()
     return gen
 
 def true_synthetic_accessibility_scores(sanitized_mols):
