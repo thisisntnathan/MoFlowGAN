@@ -111,26 +111,8 @@ def load_model(path):
     '''
     Loads a model from the checkpoint file
     '''
-    model_params_gflow = FlowHyperPars(b_n_type=4,
-                               b_n_flow=10,
-                               b_n_block=1,
-                               b_n_squeeze=3,
-                               b_hidden_ch=[128, 128],
-                               b_affine=True,
-                               b_conv_lu=1,
-                               a_n_node=9,
-                               a_n_type=5,
-                               a_hidden_gnn=[64],
-                               a_hidden_lin=[128, 64],
-                               a_n_flow=27,
-                               a_n_block=1,
-                               mask_row_size_list=[1],
-                               mask_row_stride_list=[1],
-                               a_affine=True,
-                               learn_dist=1,
-                               seed=420,
-                               noise_scale=0.6
-                               )
+    param_path = os.path.join(os.path.dirname(path), 'gen-params.json')
+    model_params_gflow = FlowHyperPars(path=param_path)
     gen = MoFlow(model_params_gflow)
     chk = torch.load(path, map_location='cpu')
     gen.load_state_dict(chk['GStateDict'])
