@@ -1,7 +1,10 @@
+import time
 import torch
 import numpy as np
-import matplotlib.pyplot as plt
 from rdkit import Chem
+from rdkit.Contrib.SA_Score import sascorer as sa # SA Scoring from Ertl
+from rdkit.Contrib.NP_Score import npscorer as natp # natural product likeliness
+fscore = natp.readNPModel()
 from rdkit import RDLogger
 RDLogger.DisableLog('rdApp.*')
 
@@ -10,13 +13,34 @@ from mflow.models.model import MoFlow
 from mflow.utils.molecular_metrics import *
 from mflow.models.utils import construct_mol, construct_mol_with_validation
 from mflow.generate import generate_mols
-from mGAN.reward_loss import synthetic_accessibility_scores, natural_product_scores
-from data.sparse_molecular_dataset import SparseMolecularDataset
-
+# from mGAN.reward_loss import synthetic_accessibility_scores, natural_product_scores
 
 # this use of qm9-5k may not be correct, maybe use the full qm9?
+from data.sparse_molecular_dataset import SparseMolecularDataset
 train_sparse= SparseMolecularDataset()
 train_sparse.load('./data/qm9_5k.sparsedataset')
+
+
+def true_synthetic_accessibility_scores(sanitized_mols):
+    '''
+    Synthetic accessability score: [1, 10] - lower is better
+    As described in http://www.jcheminf.com/content/1/1/8
+    '''
+    scores = np.array([sa.calculateScore(mol) if mol is not None 
+                       else 10 for mol in sanitized_mols])  # [1, 10]
+    return scores
+
+
+def true_natural_product_scores(sanitized_mols):
+    '''
+    Ertl's natural product likness scores
+    Originally: [-5, 5] - higher is better
+    
+    http://pubs.acs.org/doi/abs/10.1021/ci700286x
+    '''
+    scores = np.array([natp.scoreMol(mol, fscore) if mol is not None 
+                       else -5 for mol in sanitized_mols])  # [-5, 5]
+    return scores
 
 
 def drug_candidate_scores(logP, syn_acc, nov):
@@ -71,8 +95,8 @@ def evaluate_scores(edges, nodes, atomic_num_list=[6, 7, 8, 9, 0], training_data
     
     water_octanol_partition = mm.water_octanol_partition_coefficient_scores(mols, norm=True).flatten().reshape(-1,1) # vec - [0, 1]
     qed = mm.quantitative_estimation_druglikeness_scores(mols, norm=True).flatten().reshape(-1,1)  # vec - [0, 1]
-    np_score = natural_product_scores(sani_mols).reshape(-1,1)  # vec - [0, 1]
-    synthetic_accessibility = synthetic_accessibility_scores(sani_mols).reshape(-1,1)  # vec - [0, 1]
+    np_score = true_natural_product_scores(sani_mols).reshape(-1,1) # vec - [1, 10]
+    synthetic_accessibility = true_synthetic_accessibility_scores(sani_mols).reshape(-1,1)  # vec - [-5, 5]
     drug_candidacy = drug_candidate_scores(water_octanol_partition, 
         synthetic_accessibility, novelty).reshape(-1,1)  # vec - [0,1]
 
@@ -82,7 +106,7 @@ def evaluate_scores(edges, nodes, atomic_num_list=[6, 7, 8, 9, 0], training_data
     return nuvd, scores
 
 
-def score_model(path, return_properties=False):
+def score_model(path, num_expt=1, return_properties=False):
     '''
     Takes the path to a pre-trained model checkpoint, generates 1000 molecules, and scores them
 
@@ -118,9 +142,18 @@ def score_model(path, return_properties=False):
     chk = torch.load(path)
     gen.load_state_dict(chk['GStateDict'])
 
-    adj, x = generate_mols(gen, batch_size=1000)
-    nuvd, properties = evaluate_scores(adj, x)
-    avg_scores = np.mean(properties, axis=0).flatten()
-    if return_properties: return nuvd, avg_scores, properties
-    else: return nuvd, avg_scores
+    nuvds = np.zeros((1,4))
+    avgs = np.zeros((1,5))
 
+    for i in range(num_expt):
+        adj, x = generate_mols(gen, batch_size=1000)
+        nuvd, properties = evaluate_scores(adj, x)
+        avg_scores = np.mean(properties, axis=0).flatten()
+        nuvds = np.vstack((nuvds, nuvd))
+        avgs = np.vstack((avgs, avg_scores))
+    
+    nuvds = nuvds[1:, :].mean(axis=0).tolist()
+    avgs = avgs[1:, :].mean(axis=0).tolist()
+
+    if return_properties: return nuvds, avgs, properties
+    else: return nuvds, avgs
