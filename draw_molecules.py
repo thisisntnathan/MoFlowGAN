@@ -38,9 +38,10 @@ def show_and_tell(path):
     adj, x = generate_mols(gen, batch_size=100)
     val_res = check_validity(adj, x, atomic_num_list)
     
-    gen_dir = os.path.join(os.path.dirname(path), 'generated')
+    pth = os.path.normpath(os.path.dirname(path))
+    gen_dir = '/notebooks/results/validation/generated'
     os.makedirs(gen_dir, exist_ok=True)
-    filepath = os.path.join(gen_dir, 'generated_mols.png')
+    filepath = os.path.join(gen_dir, 'generated_mols_{}.png'.format(pth[-1]))
     img = Draw.MolsToGridImage(val_res['valid_mols'], legends=val_res['valid_smiles'], 
                                molsPerRow=10, subImgSize=(300, 300), returnPNG=False)
     img.save(filepath)
