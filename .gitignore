@@ -9,6 +9,9 @@ wip/*
 # main
 main.ipynb
 
+# results folder (for diagnostic use only)
+/results
+
 ## Standard python stuff
 
 # Byte-compiled / optimized / DLL files
