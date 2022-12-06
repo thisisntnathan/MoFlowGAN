@@ -17,12 +17,13 @@ from data import transform_qm9
 from data.data_loader import NumpyTupleDataset
 
 # this use of qm9-5k may not be correct, maybe use the full qm9?
-from data.sparse_molecular_dataset import SparseMolecularDataset
+from data.sparse_qm9.sparse_molecular_dataset import SparseMolecularDataset
 train_sparse= SparseMolecularDataset()
-train_sparse.load('./data/qm9_5k.sparsedataset')
+# train_sparse.load('./data/sparse_qm9/qm9_5k.sparsedataset')
+train_sparse.load('./data/sparse_qm9/qm9.sparsedataset')
 
 
-def score_model(path, num_expt=1, return_properties=False):
+def score_model(path, num_expt=1, return_properties=False, batch_size=1000):
     '''
     Takes the path to a pre-trained model checkpoint, generates 1000 molecules, and scores them
 
@@ -38,7 +39,7 @@ def score_model(path, num_expt=1, return_properties=False):
     avgs = np.zeros((1,5))
 
     for i in range(num_expt):
-        adj, x = generate_mols(gen, batch_size=1000)
+        adj, x = generate_mols(gen, batch_size=batch_size)
         nuvd, properties = evaluate_scores(adj, x)
         avg_scores = np.mean(properties, axis=0).flatten()
         nuvds = np.vstack((nuvds, nuvd))
@@ -53,10 +54,7 @@ def score_model(path, num_expt=1, return_properties=False):
 
 def score_reconstruction(path, gpu=-1):
     '''
-    Takes the path to a pre-trained model and uses it to reconstruct the training data from its latent representation
 
-    Returns:
-    reconstruction_rate: rate of reconstruction for training data
     '''
     # load pre-trained model from checkpoint
     gen = load_model(path)
@@ -66,7 +64,6 @@ def score_reconstruction(path, gpu=-1):
     else:
         device = torch.device('cpu')
     gen.to(device)
-    gen.eval()
 
     # prep dataset
     atomic_num_list = [6, 7, 8, 9, 0]
@@ -79,7 +76,6 @@ def score_reconstruction(path, gpu=-1):
     assert len(valid_idx) > 0
     train_idx = [t for t in range(len(dataset)) if t not in valid_idx]  # 120803 = 133885-13082
     train = torch.utils.data.Subset(dataset, train_idx)  # 120803
-    # test = torch.utils.data.Subset(dataset, valid_idx)  # 13082  not used for generation
     train_dataloader = torch.utils.data.DataLoader(train, batch_size=batch_size)
 
     # evaluate dataset reconstruction
@@ -117,6 +113,7 @@ def load_model(path):
     chk = torch.load(path, map_location='cpu')
     gen.load_state_dict(chk['GStateDict'])
     return gen
+
 
 def true_synthetic_accessibility_scores(sanitized_mols):
     '''
@@ -190,8 +187,8 @@ def evaluate_scores(edges, nodes, atomic_num_list=[6, 7, 8, 9, 0], training_data
     validity = mm.valid_scores(mols).mean()   # scalar
     diversity = mm.diversity_scores(sani_mols, training_data).mean() # scalar
     
-    water_octanol_partition = mm.water_octanol_partition_coefficient_scores(mols, norm=True).flatten().reshape(-1,1) # vec - [0, 1]
-    qed = mm.quantitative_estimation_druglikeness_scores(mols, norm=True).flatten().reshape(-1,1)  # vec - [0, 1]
+    water_octanol_partition = mm.water_octanol_partition_coefficient_scores(mols, norm=False).flatten().reshape(-1,1) # vec - [0, 1]
+    qed = mm.quantitative_estimation_druglikeness_scores(mols, norm=False).flatten().reshape(-1,1)  # vec - [0, 1]
     np_score = true_natural_product_scores(sani_mols).reshape(-1,1) # vec - [1, 10]
     synthetic_accessibility = true_synthetic_accessibility_scores(sani_mols).reshape(-1,1)  # vec - [-5, 5]
     drug_candidacy = drug_candidate_scores(water_octanol_partition, 
