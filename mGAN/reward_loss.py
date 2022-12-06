@@ -18,7 +18,7 @@ fscore = natp.readNPModel()
 
 def synthetic_accessibility_scores(sanitized_mols):
     '''
-    Synthetic acessability score
+    Synthetic accessibility score
     Originally: [1, 10] - lower is better
     Modified: [0.1, 1] - higher is better
     
@@ -44,12 +44,11 @@ def natural_product_scores(sanitized_mols):
 
 def calculate_rewards(edges, nodes, atomic_num_list, training_data=train_sparse, weights=None):
     """
-    
     In:
     edges, nodes: adjacency and label tensors/matrices corresponding to molecules
     atomic_number_list: decoding key for elements of atoms
-    training_data: dataset used to evaluate novelty and diversity (right now just a sparse subset)
-    weights: vector of length 7 used to weigh molecule scores. Orderd:
+    training_data: dataset used to evaluate novelty and diversity
+    weights: vector of length 7 used to weigh molecule scores. Ordered:
     [np_score, water_octanol_partition, synthetic_accessibility, novelty, uniqueness, diversity, validity]
 
     Out:
