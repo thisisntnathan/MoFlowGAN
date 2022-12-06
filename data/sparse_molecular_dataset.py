@@ -1,3 +1,5 @@
+# OLD VERSION - DEPRECIATED - THIS WILL BE DELETED BEFORE RELEASE
+# USE /data/sparse_qm9/sparse_molecular_dataset.py INSTEAD
 # https://github.com/nicola-decao/MolGAN/blob/master/utils/sparse_molecular_dataset.py
 
 import pickle
