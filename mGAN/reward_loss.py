@@ -11,15 +11,9 @@ from mflow.models.utils import construct_mol, construct_mol_with_validation
 from data.sparse_molecular_dataset import SparseMolecularDataset
 
 train_sparse= SparseMolecularDataset()
-train_sparse.load('./data/qm9_5k.sparsedataset')
+# train_sparse.load('./data/sparse_qm9/qm9_5k.sparsedataset')
+train_sparse.load('./data/sparse_qm9/qm9.sparsedataset')
 fscore = natp.readNPModel()
-
-def normalize(data):
-    '''
-    data is a numpy array that gets normalized to [0, 1]
-    '''
-    if np.max(data) == np.min(data): return data / np.max(data)
-    return (data - np.min(data)) / (np.max(data) - np.min(data))
 
 
 def synthetic_accessibility_scores(sanitized_mols):
