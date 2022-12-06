@@ -16,7 +16,7 @@ def show_and_tell(path):
     adj, x = generate_mols(gen, batch_size=100)
     val_res = check_validity(adj, x, atomic_num_list)
     
-    pth = os.path.normpath(os.path.dirname(path))
+    pth = os.path.normpath(os.path.dirname(path)).split(os.sep)
     gen_dir = '/notebooks/results/validation/generated'
     os.makedirs(gen_dir, exist_ok=True)
     filepath = os.path.join(gen_dir, 'generated_mols_{}.png'.format(pth[-1]))
