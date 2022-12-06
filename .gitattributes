@@ -1,1 +1,2 @@
 *.npz filter=lfs diff=lfs merge=lfs -text
+/data/sparse_qm9/*.sparsedataset filter=lfs diff=lfs merge=lfs -text
