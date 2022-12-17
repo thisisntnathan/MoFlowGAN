@@ -1,7 +1,7 @@
 # MoFlowGAN
 
 You've found the working repo for MoFlowGAN, a normalizing flow that can be trained like a GAN to generate high quality molecular graphs.  
-The code here works, so bear with us as we put a last minute shine on things before we release our preprint!  
+The code here works, so feel free to train your own model while we put a last minute shine on things before we release our preprint!  
 
 ## Training your own model
 
@@ -42,7 +42,9 @@ python reward_trainer.py --data_name qm9 -t 237 --max_epochs 50 --gpu 0 --adv_re
 
 ### Evaluation
 
+We provide a simple jupyter notebook `eval.ipynb` for evaluating your models!
 
+<!-- TODO: Clean up a notebook for production -->
 
 ## Acknowledgements
 
