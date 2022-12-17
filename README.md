@@ -1,7 +1,6 @@
 # MoFlowGAN
 
-You've found the working repo for MoFlowGAN, a normalizing flow that can be trained like a GAN to generate high quality molecular graphs.  
-The code here works, so feel free to train your own model while we put a last minute shine on things before we release our preprint!  
+You've found the working repo for MoFlowGAN, a normalizing flow that can be trained like a GAN to generate high quality molecular graphs. The code here works, so feel free to train your own model while we put a last minute shine on our preprint!  
 
 ## Training your own model
 
