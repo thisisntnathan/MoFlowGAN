@@ -51,6 +51,8 @@ python reward_trainer.py --data_name qm9 -t 237 --max_epochs 50 --gpu 0 --adv_re
 
 We provide a simple jupyter notebook `evaluate.ipynb` for evaluating your model's performance!
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/thisisntnathan/MoFlowGAN/blob/main/evaluate.ipynb)
+
 ## Acknowledgements
 
 MoFlowGAN started off as final project for Cornell's CS 6784: Advanced Topics in Machine Learning - Deep Learning. We thank [Prof. Killian Weinberger](https://www.cs.cornell.edu/~kilian/) for insights, input, and fruitful discussion.  
