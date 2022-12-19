@@ -43,9 +43,7 @@ python reward_trainer.py --data_name qm9 -t 237 --max_epochs 50 --gpu 0 --adv_re
 
 ### Evaluation
 
-We provide a simple jupyter notebook `eval.ipynb` for evaluating your model's performance!
-
-<!-- TODO: Clean up a notebook for production -->
+We provide a simple jupyter notebook `evaluate.ipynb` for evaluating your model's performance!
 
 ## Acknowledgements
 
