@@ -37,7 +37,7 @@ Alternatively, you can just clone this repository using:
 git clone https://github.com/thisisntnathan/MoFlowGAN.git MoFlowGAN
 ```
 
-<!-- We should probably host a copy of the kekulized dataset people can just wget? -->
+<!-- We should probably host a copy of the kekulized datasets people can just wget? -->
 
 ### Training
 
@@ -52,6 +52,10 @@ python reward_trainer.py --data_name qm9 -t 237 --max_epochs 50 --gpu 0 --adv_re
 We provide a simple jupyter notebook `evaluate.ipynb` for evaluating your model's performance!
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/thisisntnathan/MoFlowGAN/blob/main/evaluate.ipynb)
+
+## Contribution
+
+If you have any questions, comments, or suggestions feel free to [reach out](mailto:nml64@cornell.edu) (or submit a PR)!
 
 ## Acknowledgements
 
