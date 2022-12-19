@@ -31,6 +31,12 @@ cd data
 python data_preprocess.py --data_name qm9
 ```
 
+Alternatively, you can just clone this repository using:
+
+```
+git clone https://github.com/thisisntnathan/MoFlowGAN.git MoFlowGAN
+```
+
 <!-- We should probably host a copy of the kekulized dataset people can just wget? -->
 
 ### Training
