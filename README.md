@@ -59,6 +59,6 @@ If you have any questions, comments, or suggestions feel free to [reach out](mai
 
 ## Acknowledgements
 
-MoFlowGAN started off as final project for Cornell's CS 6784: Advanced Topics in Machine Learning - Deep Learning. We thank [Prof. Killian Weinberger](https://www.cs.cornell.edu/~kilian/) for insights, input, and fruitful discussion.  
+MoFlowGAN started off as final project for Cornell's CS 6784: Advanced Topics in Machine Learning - Deep Learning. We thank [Prof. Kilian Weinberger](https://www.cs.cornell.edu/~kilian/) for insights, input, and fruitful discussion.  
 
 MoFlowGAN's base layers are structured off those of [MoFlow](https://arxiv.org/abs/2006.10137) ([code](https://github.com/calvin-zcx/moflow)) and [MolGAN](https://arxiv.org/abs/1805.11973) ([code](https://github.com/nicola-decao/MolGAN))
