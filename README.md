@@ -1,12 +1,12 @@
 # MoFlowGAN
 
-You've found the working repo for MoFlowGAN, a normalizing flow that can be trained like a GAN to generate high quality molecular graphs. The code here works, so feel free to train your own model while we put a last minute shine on our preprint!  
+You've found the working repo for MoFlowGAN, a normalizing flow that can be trained like a GAN to generate high-quality molecular graphs. The code here works, so feel free to train your own model and generate your own molecules. There's even a Google Colab notebook linked below! Take a look at our preprint on [ChemRxiv](https://doi.org/10.26434/chemrxiv-2023-kwwv3) for the nitty gritty details!  
 
 ## Training your own model
 
 ### Installing dependencies
 
-It's best to run MoFlowGAN in its own conda environment. Learn more about conda and virtual enviornments [here](https://conda.io/projects/conda/en/latest/index.html)!
+It's best to run MoFlowGAN in its own conda environment. Learn more about conda and virtual environments [here](https://conda.io/projects/conda/en/latest/index.html)!
 
 ```
 conda create --name moflow python pandas matplotlib 
@@ -49,7 +49,7 @@ python reward_trainer.py --data_name qm9 -t 237 --max_epochs 50 --gpu 0 --adv_re
 
 ### Evaluation
 
-We provide a simple jupyter notebook `evaluate.ipynb` for evaluating your model's performance!
+We provide a simple Jupyter notebook `evaluate.ipynb` for evaluating your model's performance!
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/thisisntnathan/MoFlowGAN/blob/main/evaluate.ipynb)
 
@@ -57,8 +57,12 @@ We provide a simple jupyter notebook `evaluate.ipynb` for evaluating your model'
 
 If you have any questions, comments, or suggestions feel free to [reach out](mailto:nml64@cornell.edu) (or submit a PR)!
 
+## Citation
+
+Read our preprint on [ChemRxiv](https://doi.org/10.26434/chemrxiv-2023-kwwv3)!  
+
 ## Acknowledgements
 
-MoFlowGAN started off as final project for Cornell's CS 6784: Advanced Topics in Machine Learning - Deep Learning. We thank [Prof. Kilian Weinberger](https://www.cs.cornell.edu/~kilian/) for insights, input, and fruitful discussion.  
+MoFlowGAN started off as a final project for Cornell's CS 6784: Advanced Topics in Machine Learning - Deep Learning. We thank [Prof. Kilian Weinberger](https://www.cs.cornell.edu/~kilian/) for insights, input, and fruitful discussion.  
 
 MoFlowGAN's base layers are structured off those of [MoFlow](https://arxiv.org/abs/2006.10137) ([code](https://github.com/calvin-zcx/moflow)) and [MolGAN](https://arxiv.org/abs/1805.11973) ([code](https://github.com/nicola-decao/MolGAN))
